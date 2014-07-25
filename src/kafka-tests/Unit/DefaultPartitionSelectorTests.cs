@@ -7,6 +7,7 @@ using KafkaNet;
 using KafkaNet.Model;
 using NUnit.Framework;
 using KafkaNet.Protocol;
+using KafkaNet.Common;
 
 namespace kafka_tests.Unit
 {
@@ -105,8 +106,8 @@ namespace kafka_tests.Unit
         {
             var selector = new DefaultPartitionSelector();
 
-            var first = selector.Select(_topicA, "0");
-            var second = selector.Select(_topicA, "1");
+            var first = selector.Select(_topicA, "0".ToBytes());
+            var second = selector.Select(_topicA, "1".ToBytes());
 
             Assert.That(first.PartitionId, Is.EqualTo(0));
             Assert.That(second.PartitionId, Is.EqualTo(1));
@@ -126,7 +127,7 @@ namespace kafka_tests.Unit
                 };
 
 
-            selector.Select(topic, "1");
+            selector.Select(topic, "1".ToBytes());
         }
 
         [Test]
@@ -139,7 +140,7 @@ namespace kafka_tests.Unit
                 Name = "emptyPartition",
                 Partitions = new List<Partition>()
             };
-            selector.Select(topic, "1");
+            selector.Select(topic, "1".ToBytes());
         }
 
     }

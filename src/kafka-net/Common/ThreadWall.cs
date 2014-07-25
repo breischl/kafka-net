@@ -15,7 +15,8 @@ namespace KafkaNet.Common
     /// should be allowed past the wall at the same time without lock contention between the other threads.  The waiting
     /// threads are able to async await the passage through the wall.
     /// 
-    /// TODO There is almost certainly a better way to handle this type of senario, research/suggestions?
+    /// TODO: There is almost certainly a better way to handle this type of senario, research/suggestions?
+	/// BKR comment: This looks a lot like a ReaderWriterLockSlim.
     /// </summary>
     public class ThreadWall
     {

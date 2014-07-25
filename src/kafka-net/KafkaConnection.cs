@@ -128,7 +128,7 @@ namespace KafkaNet
         {
             //This thread will poll the receive stream for data, parce a message out
             //and trigger an event with the message payload
-            Task.Factory.StartNew(() =>
+            Task.Factory.StartNew(async () =>
                 {
                     try
                     {
@@ -140,10 +140,10 @@ namespace KafkaNet
                             try
                             {
                                 _log.DebugFormat("Awaiting message from: {0}", KafkaUri);
-                                var messageSize = _client.ReadAsync(4, _disposeToken.Token).Result.ToInt32();
+                                var messageSize = (await _client.ReadAsync(4, _disposeToken.Token)).ToInt32();
 
                                 _log.DebugFormat("Received message of size: {0} From: {1}", messageSize, KafkaUri);
-                                var message = _client.ReadAsync(messageSize, _disposeToken.Token).Result;
+                                var message = await _client.ReadAsync(messageSize, _disposeToken.Token);
 
                                 CorrelatePayloadToRequest(message);
                             }

@@ -3,7 +3,8 @@ using KafkaNet;
 using KafkaNet.Protocol;
 using NUnit.Framework;
 using kafka_tests.Helpers;
-
+using System.Text;
+using KafkaNet.Common;
 
 namespace kafka_tests.Unit
 {
@@ -17,8 +18,8 @@ namespace kafka_tests.Unit
         {
             var testMessage = new Message
             {
-                Key = "test",
-                Value = "kafka test message."
+                Key = "test".ToBytes(),
+                Value = "kafka test message.".ToBytes()
             };
 
             var encoded = Message.EncodeMessage(testMessage);
@@ -28,22 +29,22 @@ namespace kafka_tests.Unit
 
         [Test]
         [TestCase("test key", "test message")]
-        [TestCase(null, "test message")]
-        [TestCase("test key", null)]
-        [TestCase(null, null)]
+		[TestCase(null, "test message")]
+		[TestCase("test key", null)]
+		[TestCase(null, null)]
         public void EnsureMessageEncodeAndDecodeAreCompatible(string key, string value)
         {
             var testMessage = new Message
                 {
-                    Key = key,
-                    Value = value
+                    Key = key.ToBytes(),
+					Value = (value == null ? new byte[0] : value.ToBytes())
                 };
 
             var encoded = Message.EncodeMessage(testMessage);
             var result = Message.DecodeMessage(0, encoded).First();
 
-            Assert.That(testMessage.Key, Is.EqualTo(result.Key));
-            Assert.That(testMessage.Value, Is.EqualTo(result.Value));
+            Assert.That(result.Key, Is.EqualTo(testMessage.Key));
+            Assert.That(result.Value, Is.EqualTo(testMessage.Value));
         }
 
         [Test]
@@ -52,16 +53,16 @@ namespace kafka_tests.Unit
             //expected generated from python library
             var expected = new byte[]
                 {
-                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 16, 45, 70, 24, 62, 0, 0, 0, 0, 0, 1, 49, 0, 0, 0, 1, 48, 0, 0, 0,
-                    0, 0, 0, 0, 0, 0, 0, 0, 16, 90, 65, 40, 168, 0, 0, 0, 0, 0, 1, 49, 0, 0, 0, 1, 49, 0, 0, 0, 0, 0, 0,
-                    0, 0, 0, 0, 0, 16, 195, 72, 121, 18, 0, 0, 0, 0, 0, 1, 49, 0, 0, 0, 1, 50
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 16, 45, 70, 24, 62, 0, 0, 0, 0, 0, 1, 49, 0, 0, 0, 1, 48, 
+					0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 16, 90, 65, 40, 168, 0, 0, 0, 0, 0, 1, 49, 0, 0, 0, 1, 49, 
+					0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 16, 195, 72, 121, 18, 0, 0, 0, 0, 0, 1, 49, 0, 0, 0, 1, 50
                 };
 
             var messages = new[]
                 {
-                    new Message {Value = "0", Key = "1"},
-                    new Message {Value = "1", Key = "1"},
-                    new Message {Value = "2", Key = "1"}
+                    new Message {Value = "0".ToBytes(), Key = "1".ToBytes()},
+                    new Message {Value = "1".ToBytes(), Key = "1".ToBytes()},
+                    new Message {Value = "2".ToBytes(), Key = "1".ToBytes()}
                 };
 
             var result = Message.EncodeMessageSet(messages);

@@ -11,7 +11,7 @@ namespace KafkaNet.Common
     /// </summary>
     public class WriteByteStream
     {
-        private readonly List<byte[]> _message = new List<byte[]>();
+		private readonly List<byte[]> _message = new List<byte[]>();
 
         public int Length()
         {

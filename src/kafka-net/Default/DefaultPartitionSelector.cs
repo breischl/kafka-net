@@ -9,7 +9,7 @@ namespace KafkaNet
     public class DefaultPartitionSelector : IPartitionSelector
     {
         private readonly ConcurrentDictionary<string, Partition> _roundRobinTracker = new ConcurrentDictionary<string, Partition>();
-        public Partition Select(Topic topic, string key)
+        public Partition Select(Topic topic, byte[] key)
         {
             if (topic == null) throw new ArgumentNullException("topic");
             if (topic.Partitions.Count <= 0) throw new ApplicationException(string.Format("Topic ({0}) has no partitions.", topic.Name));
@@ -28,6 +28,8 @@ namespace KafkaNet
             }
             
             //use key hash
+			//TODO: This seems kind of bad, as it will give an inconsistent hash. 
+			//Perhaps it would be better to MD5 the bytes and use that, or something along those lines?
             var partitionId = Math.Abs(key.GetHashCode()) % partitions.Count;
             var partition = partitions.FirstOrDefault(x => x.PartitionId == partitionId);
 

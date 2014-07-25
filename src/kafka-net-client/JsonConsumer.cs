@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
 using KafkaNet.Model;
 using KafkaNet.Protocol;
 using Newtonsoft.Json;
@@ -24,7 +25,7 @@ namespace KafkaNet.Client
                 .Select(response => new Message<T>
                 {
                     Meta = response.Meta,
-                    Value = JsonConvert.DeserializeObject<T>(response.Value)
+                    Value = JsonConvert.DeserializeObject<T>(Encoding.UTF8.GetString(response.Value))
                 });
         }
 

@@ -6,6 +6,7 @@ using NUnit.Framework;
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using KafkaNet.Common;
 
 namespace kafka_tests.Unit
 {
@@ -182,9 +183,11 @@ namespace kafka_tests.Unit
         [TestCase("withkey")]
         public void SelectPartitionShouldUsePartitionSelector(string key)
         {
+			var keyBytes = key.ToBytes();
+
             var routerProxy = new BrokerRouterProxy(_kernel);
 
-            _partitionSelectorMock.Setup(x => x.Select(It.IsAny<Topic>(), key))
+			_partitionSelectorMock.Setup(x => x.Select(It.IsAny<Topic>(), keyBytes))
                                   .Returns(() => new Partition
                                   {
                                       ErrorCode = 0,
@@ -196,9 +199,9 @@ namespace kafka_tests.Unit
 
             routerProxy.PartitionSelector = _partitionSelectorMock.Object;
 
-            var result = routerProxy.Create().SelectBrokerRoute(TestTopic, key);
+			var result = routerProxy.Create().SelectBrokerRoute(TestTopic, keyBytes);
 
-            _partitionSelectorMock.Verify(f => f.Select(It.Is<Topic>(x => x.Name == TestTopic), key), Times.Once());
+			_partitionSelectorMock.Verify(f => f.Select(It.Is<Topic>(x => x.Name == TestTopic), keyBytes), Times.Once());
         }
 
         [Test]

@@ -1,9 +1,11 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
 using System.Threading.Tasks;
 using KafkaNet.Protocol;
 using Newtonsoft.Json;
+using KafkaNet.Common;
 
 namespace KafkaNet.Client
 {
@@ -27,8 +29,8 @@ namespace KafkaNet.Client
 
             return messages.Select(m => new Message
                 {
-                    Key = hasKey ? GetKeyPropertyValue(m) : null,
-                    Value = JsonConvert.SerializeObject(m)
+                    Key = hasKey ? GetKeyPropertyValue(m).ToBytes() : null,
+                    Value = Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(m))
                 });
         }
 

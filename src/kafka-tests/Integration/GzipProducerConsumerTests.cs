@@ -6,6 +6,8 @@ using KafkaNet.Model;
 using KafkaNet.Protocol;
 using NUnit.Framework;
 using kafka_tests.Helpers;
+using KafkaNet.Common;
+using System.Threading.Tasks;
 
 namespace kafka_tests.Integration
 {
@@ -15,13 +17,13 @@ namespace kafka_tests.Integration
     {
         private readonly KafkaOptions _options = new KafkaOptions(IntegrationConfig.IntegrationUri);
 
-       private KafkaConnection GetKafkaConnection()
+        private KafkaConnection GetKafkaConnection()
         {
             return new KafkaConnection(new KafkaTcpSocket(new DefaultTraceLog(), _options.KafkaServerUri.First()), _options.ResponseTimeoutMs, _options.Log);
         }
 
         [Test]
-        public void EnsureGzipCompressedMessageCanSend()
+        public async Task EnsureGzipCompressedMessageCanSend()
         {
             //ensure topic exists
             using (var conn = GetKafkaConnection())
@@ -46,39 +48,41 @@ namespace kafka_tests.Integration
                                             Partition = 0,
                                             Messages = new List<Message>
                                                     {
-                                                        new Message {Value = "0", Key = "1"},
-                                                        new Message {Value = "1", Key = "1"},
-                                                        new Message {Value = "2", Key = "1"}
+                                                        new Message {Value = 0.ToBytes(), Key = "1".ToBytes()},
+                                                        new Message {Value = 1.ToBytes(), Key = "1".ToBytes()},
+                                                        new Message {Value = 2.ToBytes(), Key = "1".ToBytes()}
                                                     }
                                         }
                                 }
                 };
 
-                var response = conn.Connection.SendAsync(request).Result;
+                var response = await conn.Connection.SendAsync(request);
                 Assert.That(response.First().Error, Is.EqualTo(0));
             }
         }
 
-        [Test]
-        public void EnsureGzipCanDecompressMessageFromKafka()
-        {
-            var router = new BrokerRouter(_options);
-            var producer = new Producer(router);
+		[Test]
+		public async Task EnsureGzipCanDecompressMessageFromKafka()
+		{
+			//TODO: This test requires that there already be published messages (ie, that the previous test has already run)
+			//so it can hang indefinitely on the first test run.
 
-            var offsets = producer.GetTopicOffsetAsync(IntegrationConfig.IntegrationCompressionTopic).Result;
+			using (var router = new BrokerRouter(_options))
+			using (var producer = new Producer(router))
+			{
 
-            var consumer = new Consumer(new ConsumerOptions(IntegrationConfig.IntegrationCompressionTopic, router),
-                offsets.Select(x => new OffsetPosition(x.PartitionId, 0)).ToArray());
+				var offsets = await producer.GetTopicOffsetAsync(IntegrationConfig.IntegrationCompressionTopic);
 
-            var results = consumer.Consume().Take(3).ToList();
+				var consumer = new Consumer(new ConsumerOptions(IntegrationConfig.IntegrationCompressionTopic, router),
+					offsets.Select(x => new OffsetPosition(x.PartitionId, 0)).ToArray());
 
-            for (int i = 0; i < 3; i++)
-            {
-                Assert.That(results[i].Value, Is.EqualTo(i.ToString()));
-            }
+				var results = consumer.Consume().Take(3).ToList();
 
-            using (producer)
-            using (consumer) { }
-        }
+				for (int i = 0; i < 3; i++)
+				{
+					Assert.That(results[i].Value.ToInt32(), Is.EqualTo(i));
+				}
+			}
+		}
     }
 }

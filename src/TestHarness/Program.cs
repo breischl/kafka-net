@@ -4,6 +4,7 @@ using KafkaNet;
 using KafkaNet.Model;
 using KafkaNet.Protocol;
 using System.Collections.Generic;
+using System.Text;
 
 namespace TestHarness
 {
@@ -33,7 +34,7 @@ namespace TestHarness
             {
                 var message = Console.ReadLine();
                 if (message == "quit") break;
-                client.SendMessageAsync("TestHarness", new[] {new Message {Value = message}});
+                client.SendMessageAsync("TestHarness", new[] {new Message {Value = Encoding.UTF8.GetBytes(message)}});
             }
 
             using (client)

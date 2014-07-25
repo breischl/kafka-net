@@ -87,7 +87,14 @@ namespace KafkaNet.Common
         public byte[] ReadIntPrefixedBytes()
         {
             var size = ReadInt();
-            return ReadBytesFromStream(size);
+			if (size == -1)
+			{
+				return null;
+			}
+			else
+			{
+				return ReadBytesFromStream(size);
+			}
         }
 
         public byte[] ReadToEnd()
@@ -100,10 +107,13 @@ namespace KafkaNet.Common
 
         public byte[] ReadBytesFromStream(int size)
         {
-            var buffer = new byte[size];
+			if (size <= 0)
+			{
+				return new byte[0];
+			}
 
+			var buffer = new byte[size];
             _stream.Read(buffer, 0, size);
-
             return buffer;
         }
     }

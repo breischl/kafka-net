@@ -219,8 +219,9 @@ namespace KafkaNet
                 {
                     reconnectionDelay = reconnectionDelay * DefaultReconnectionTimeoutMultiplier;
                     _log.WarnFormat("Failed re-connection to:{0}.  Will retry in:{1}", ClientUri, reconnectionDelay);
-                    Task.Delay(TimeSpan.FromMilliseconds(reconnectionDelay)).Wait();
                 }
+
+				await Task.Delay(TimeSpan.FromMilliseconds(reconnectionDelay));
             }
 
             return _client;
@@ -232,7 +233,6 @@ namespace KafkaNet
 
             using (_client)
             {
-                
             }
         }
     }

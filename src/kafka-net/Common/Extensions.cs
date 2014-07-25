@@ -21,7 +21,7 @@ namespace KafkaNet.Common
                         .ToArray();
         }
 
-        public static byte[] ToInt16SizedBytes(this string value)
+		public static byte[] ToInt16SizedBytes(this string value)
         {
             if (string.IsNullOrEmpty(value)) return (-1).ToBytes();
 
@@ -35,7 +35,7 @@ namespace KafkaNet.Common
             if (string.IsNullOrEmpty(value)) return (-1).ToBytes();
             
             //UTF8 is array of bytes, no endianness
-            return Encoding.Default.GetBytes(value);
+            return Encoding.UTF8.GetBytes(value);
         }
 
         public static byte[] ToBytes(this Int16 value)
@@ -78,6 +78,11 @@ namespace KafkaNet.Common
             return BitConverter.ToInt32(value.Reverse().ToArray(), 0);
         }
 
-        
+		public static byte[] ToIntPrefixedBytes(this byte[] value)
+		{
+			return value.Length.ToBytes()
+						.Concat(value)
+						.ToArray();
+		}
     }
 }

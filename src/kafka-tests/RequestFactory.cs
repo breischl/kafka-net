@@ -1,4 +1,5 @@
 ﻿using System.Collections.Generic;
+using System.Text;
 using KafkaNet.Protocol;
 
 namespace kafka_tests
@@ -14,7 +15,7 @@ namespace kafka_tests
                             new Payload
                                 {
                                     Topic = topic,
-                                    Messages = new List<Message>(new[] {new Message {Value = message}})
+                                    Messages = new List<Message>(new[] {new Message {Value = Encoding.UTF8.GetBytes(message)}})
                                 }
                         })
                 };
