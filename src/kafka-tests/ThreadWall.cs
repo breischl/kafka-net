@@ -2,7 +2,7 @@
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace KafkaNet.Common
+namespace kafka_tests
 {
     /// <summary>
     /// The initial state of the ThreadWall when the class is constructed.

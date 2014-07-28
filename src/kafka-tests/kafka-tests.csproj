@@ -66,6 +66,7 @@
     <Compile Include="Integration\GzipProducerConsumerTests.cs" />
     <Compile Include="Integration\OffsetManagementTests.cs" />
     <Compile Include="Integration\ProducerConsumerIntegrationTests.cs" />
+    <Compile Include="ThreadWall.cs" />
     <Compile Include="Unit\FakeTcpServerTests.cs" />
     <Compile Include="Unit\KafkaConnectionTests.cs" />
     <Compile Include="Unit\KafkaTcpSocketTests.cs" />

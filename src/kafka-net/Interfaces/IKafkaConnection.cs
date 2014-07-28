@@ -1,12 +1,12 @@
 ﻿using System;
+using System.Collections.Generic;
+using System.Threading.Tasks;
 
 namespace KafkaNet
 {
     public interface IKafkaConnection : IDisposable
     {
         Uri KafkaUri { get; }
-        bool ReadPolling { get; }
-        System.Threading.Tasks.Task SendAsync(byte[] payload);
-        System.Threading.Tasks.Task<System.Collections.Generic.List<T>> SendAsync<T>(IKafkaRequest<T> request);
+        Task<List<T>> SendAsync<T>(IKafkaRequest<T> request);
     }
 }

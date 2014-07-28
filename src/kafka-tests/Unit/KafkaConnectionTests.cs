@@ -28,30 +28,6 @@ namespace kafka_tests.Unit
             _kernel = new MoqMockingKernel();
         }
 
-        #region Construct...
-        [Test]
-        public void ShouldStartReadPollingOnConstruction()
-        {
-            using (var socket = new KafkaTcpSocket(_log, new Uri("http://localhost:8999")))
-            using (var conn = new KafkaConnection(socket, log: _log))
-            {
-                TaskTest.WaitFor(() => conn.ReadPolling);
-                Assert.That(conn.ReadPolling, Is.True);
-            }
-        }
-
-        [Test]
-        public void ShouldReportServerUriOnConstruction()
-        {
-            var expectedUrl = new Uri("http://localhost:8999");
-            using (var socket = new KafkaTcpSocket(_log, expectedUrl))
-            using (var conn = new KafkaConnection(socket, log: _log))
-            {
-                Assert.That(conn.KafkaUri, Is.EqualTo(expectedUrl));
-            }
-        }
-        #endregion
-
         #region Dispose Tests...
         [Test]
         public void ShouldDisposeWithoutExceptionThrown()

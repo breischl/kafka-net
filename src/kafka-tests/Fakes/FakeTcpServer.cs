@@ -55,10 +55,8 @@ namespace kafka_tests.Helpers
         {
             if (_client != null)
             {
-                using (_client)
-                {
-                    _client.Close();
-                }
+				_client.GetStream().Dispose();
+				_client.Close();
 
                 _client = null;
             }
