@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using System.Threading;
 using KafkaNet.Common;
 using KafkaNet.Protocol;
+using Common.Logging;
 
 namespace KafkaNet
 {
@@ -16,7 +17,7 @@ namespace KafkaNet
     public class KafkaTcpSocket : IKafkaTcpSocket, IDisposable
     {
         private readonly CancellationTokenSource _disposeTokenSource = new CancellationTokenSource();
-        private readonly IKafkaLog _log;
+		private static readonly ILog _log = LogManager.GetLogger<KafkaTcpSocket>();
         private readonly Uri _serverUri;
 
 		private readonly object _clientLock = new object();
@@ -29,9 +30,8 @@ namespace KafkaNet
         /// <param name="log">Logging facility for verbose messaging of actions.</param>
         /// <param name="serverUri">The server to connect to.</param>
         /// <param name="delayConnectAttemptMS">Time in milliseconds to delay the initial connection attempt to the given server.</param>
-		public KafkaTcpSocket(IKafkaLog log, Uri serverUri)
+		public KafkaTcpSocket(Uri serverUri)
         {
-            _log = log;
             _serverUri = serverUri;
         }
 
@@ -66,10 +66,6 @@ namespace KafkaNet
 				}
 
 				return readBuffer;
-			}
-			catch (TaskCanceledException)
-			{
-				throw;
 			}
 			catch (OperationCanceledException)
 			{
@@ -109,14 +105,10 @@ namespace KafkaNet
 				_disposeTokenSource.Token.ThrowIfCancellationRequested();
 				await _stream.WriteAsync(buffer, 0, buffer.Length);
 			}
-			catch (TaskCanceledException)
-			{
-				throw;
-			}
-			catch (OperationCanceledException)
-			{
-				throw;
-			}
+			//catch (OperationCanceledException)
+			//{
+			//	throw;
+			//}
 			catch (ObjectDisposedException)
 			{
 				if (_disposeTokenSource.IsCancellationRequested)

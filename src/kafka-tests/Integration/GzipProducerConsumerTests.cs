@@ -13,13 +13,14 @@ namespace kafka_tests.Integration
 {
     [TestFixture]
     [Category("Integration")]
+	[Timeout(10000)]
     public class GzipProducerConsumerTests
     {
         private readonly KafkaOptions _options = new KafkaOptions(IntegrationConfig.IntegrationUri);
 
         private KafkaConnection GetKafkaConnection()
         {
-            return new KafkaConnection(new KafkaTcpSocket(new DefaultTraceLog(), _options.KafkaServerUri.First()), _options.ResponseTimeoutMs, _options.Log);
+            return new KafkaConnection(new KafkaTcpSocket(_options.KafkaServerUri.First()), _options.ResponseTimeoutMs);
         }
 
         [Test]
@@ -28,7 +29,7 @@ namespace kafka_tests.Integration
             //ensure topic exists
             using (var conn = GetKafkaConnection())
             {
-                conn.SendAsync(new MetadataRequest { Topics = new List<string>(new[] { IntegrationConfig.IntegrationCompressionTopic }) }).Wait(TimeSpan.FromSeconds(10));
+                await conn.SendAsync(new MetadataRequest { Topics = new List<string>(new[] { IntegrationConfig.IntegrationCompressionTopic }) });
             }
 
             using (var router = new BrokerRouter(_options))
@@ -70,17 +71,16 @@ namespace kafka_tests.Integration
 			using (var router = new BrokerRouter(_options))
 			using (var producer = new Producer(router))
 			{
-
 				var offsets = await producer.GetTopicOffsetAsync(IntegrationConfig.IntegrationCompressionTopic);
-
-				var consumer = new Consumer(new ConsumerOptions(IntegrationConfig.IntegrationCompressionTopic, router),
-					offsets.Select(x => new OffsetPosition(x.PartitionId, 0)).ToArray());
-
-				var results = consumer.Consume().Take(3).ToList();
-
-				for (int i = 0; i < 3; i++)
+				var offsetPositions = offsets.Select(x => new OffsetPosition(x.PartitionId, 0)).ToArray();
+				using (var consumer = new Consumer(new ConsumerOptions(IntegrationConfig.IntegrationCompressionTopic, router), offsetPositions))
 				{
-					Assert.That(results[i].Value.ToInt32(), Is.EqualTo(i));
+					var results = consumer.Consume().Take(3).ToList();
+
+					for (int i = 0; i < 3; i++)
+					{
+						Assert.That(results[i].Value.ToInt32(), Is.EqualTo(i));
+					}
 				}
 			}
 		}

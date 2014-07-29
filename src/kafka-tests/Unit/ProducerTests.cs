@@ -16,7 +16,8 @@ namespace kafka_tests.Unit
 {
     [TestFixture]
     [Category("Unit")]
-    public class ProducerTests
+	[Timeout(10000)]		
+	public class ProducerTests
     {
         private MoqMockingKernel _kernel;
         private BrokerRouterProxy _routerProxy;
@@ -30,7 +31,7 @@ namespace kafka_tests.Unit
 
         #region SendMessageAsync Tests...
         [Test]
-        public void ProducerShouldGroupMessagesByBroker()
+        public async Task ProducerShouldGroupMessagesByBroker()
         {
             var router = _routerProxy.Create();
             using (var producer = new Producer(router))
@@ -40,7 +41,7 @@ namespace kafka_tests.Unit
                     new Message{Value = BitConverter.GetBytes(1)}, new Message{Value = BitConverter.GetBytes(2)}
                 };
 
-                var response = producer.SendMessageAsync("UnitTest", messages).Result;
+                var response = await producer.SendMessageAsync("UnitTest", messages);
 
                 Assert.That(response.Count, Is.EqualTo(2));
                 Assert.That(_routerProxy.BrokerConn0.ProduceRequestCallCount, Is.EqualTo(1));
@@ -49,7 +50,7 @@ namespace kafka_tests.Unit
         }
 
         [Test]
-        public void ShouldSendAsyncToAllConnectionsEvenWhenExceptionOccursOnOne()
+        public async Task ShouldSendAsyncToAllConnectionsEvenWhenExceptionOccursOnOne()
         {
             var routerProxy = new BrokerRouterProxy(_kernel);
             routerProxy.BrokerConn1.ProduceResponseFunction = () => { throw new ApplicationException("some exception"); };
@@ -62,14 +63,14 @@ namespace kafka_tests.Unit
                     new Message{Value = BitConverter.GetBytes(1)}, new Message{Value = BitConverter.GetBytes(2)}
                 };
 
-                producer.SendMessageAsync("UnitTest", messages).ContinueWith(t =>
+                await producer.SendMessageAsync("UnitTest", messages).ContinueWith(t =>
                 {
                     Assert.That(t.IsFaulted, Is.True);
                     Assert.That(t.Exception, Is.Not.Null);
                     Assert.That(t.Exception.ToString(), Is.StringContaining("ApplicationException"));
                     Assert.That(routerProxy.BrokerConn0.ProduceRequestCallCount, Is.EqualTo(1));
                     Assert.That(routerProxy.BrokerConn1.ProduceRequestCallCount, Is.EqualTo(1));
-                }).Wait(TimeSpan.FromSeconds(10));
+                });
             }
         }
 
@@ -137,7 +138,7 @@ namespace kafka_tests.Unit
         {
             var router = _kernel.GetMock<IBrokerRouter>();
             var producer = new Producer(router.Object);
-            using (producer) { }
+			producer.Dispose();
             router.Verify(x => x.Dispose(), Times.Once());
         }
     }

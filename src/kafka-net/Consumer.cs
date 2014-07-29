@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using KafkaNet.Common;
 using KafkaNet.Model;
 using KafkaNet.Protocol;
+using Common.Logging;
 
 namespace KafkaNet
 {
@@ -18,6 +19,7 @@ namespace KafkaNet
     /// </summary>
     public class Consumer : IMetadataQueries, IDisposable
     {
+		private static readonly ILog _log = LogManager.GetLogger<Consumer>();
         private readonly ConsumerOptions _options;
         private readonly BlockingCollection<Message> _fetchResponseQueue;
         private readonly CancellationTokenSource _disposeToken = new CancellationTokenSource();
@@ -56,10 +58,11 @@ namespace KafkaNet
         /// <returns>Blocking enumberable of messages from Kafka.</returns>
         public IEnumerable<Message> Consume(CancellationToken? cancellationToken = null)
         {
-            _options.Log.DebugFormat("Consumer: Beginning consumption of topic: {0}", _options.Topic);
+            _log.DebugFormat("Consumer: Beginning consumption of topic: {0}", _options.Topic);
             _topicPartitionQueryTimer.Begin();
 
-            return _fetchResponseQueue.GetConsumingEnumerable(cancellationToken ?? CancellationToken.None);
+			var cancelToken = CancellationTokenSource.CreateLinkedTokenSource(_disposeToken.Token, cancellationToken ?? CancellationToken.None).Token;
+            return _fetchResponseQueue.GetConsumingEnumerable(cancelToken);
         }
 
         /// <summary>
@@ -91,27 +94,29 @@ namespace KafkaNet
             {
                 if (Interlocked.Increment(ref _ensureOneThread) == 1)
                 {
-                    _options.Log.DebugFormat("Consumer: Refreshing partitions for topic: {0}", _options.Topic);
+                    _log.DebugFormat("Consumer: Refreshing partitions for topic: {0}", _options.Topic);
                     var topic = _options.Router.GetTopicMetadata(_options.Topic);
                     if (topic.Count <= 0) throw new ApplicationException(string.Format("Unable to get metadata for topic:{0}.", _options.Topic));
                     _topic = topic.First();
 
-                    //create one thread per partitions, if they are in the white list.
-                    foreach (var partition in _topic.Partitions)
-                    {
-                        var partitionId = partition.PartitionId;
-                        if (_options.PartitionWhitelist.Count == 0 || _options.PartitionWhitelist.Any(x => x == partitionId))
-                        {
-                            _partitionPollingIndex.AddOrUpdate(partitionId,
-                                                               i => ConsumeTopicPartitionAsync(_topic.Name, partitionId),
-                                                               (i, task) => task);
-                        }
-                    }
+                    //create one Task per partitions, if they are in the white list.
+					IEnumerable<Partition> pollingPartitions = _topic.Partitions;
+					if (_options.PartitionWhitelist.Any())
+					{
+						pollingPartitions = pollingPartitions.Where(p => _options.PartitionWhitelist.Contains(p.PartitionId));
+					}
+
+					foreach (var partition in pollingPartitions)
+					{
+						_partitionPollingIndex.AddOrUpdate(partition.PartitionId,
+															i => ConsumeTopicPartitionAsync(_topic.Name, partition.PartitionId),
+															(i, task) => task);
+					}
                 }
             }
             catch (Exception ex)
             {
-                _options.Log.ErrorFormat("Exception occured trying to setup consumer for topic:{0}.  Exception={1}", _options.Topic, ex);
+                _log.ErrorFormat("Exception occured trying to setup consumer for topic:{0}.  Exception={1}", _options.Topic, ex);
             }
             finally
             {
@@ -121,74 +126,79 @@ namespace KafkaNet
 
         private Task ConsumeTopicPartitionAsync(string topic, int partitionId)
         {
-            return Task.Factory.StartNew(() =>
+            return Task.Run(async delegate
             {
-                try
-                {
-                    _options.Log.DebugFormat("Consumer: Creating polling task for topic: {0} on parition: {1}", topic, partitionId);
-                    while (_disposeToken.IsCancellationRequested == false)
-                    {
-                        try
-                        {
-                            //get the current offset, or default to zero if not there.
-                            long offset = 0;
-                            _partitionOffsetIndex.AddOrUpdate(partitionId, i => offset, (i, currentOffset) => { offset = currentOffset; return currentOffset; });
+				try
+				{
+					_log.DebugFormat("Consumer: Creating polling task for topic: {0} on parition: {1}", topic, partitionId);
+					while (_disposeToken.IsCancellationRequested == false)
+					{
+						try
+						{
+							//get the current offset, or default to zero if not there.
+							long offset = _partitionOffsetIndex.AddOrUpdate(partitionId, i => 0, (i, currentOffset) => currentOffset);
 
-                            //build a fetch request for partition at offset
-                            var fetches = new List<Fetch>
-                                    {
-                                        new Fetch
-                                            {
-                                                Topic = topic,
-                                                PartitionId = partitionId,
-                                                Offset = offset
-                                            }
-                                    };
+							//build a fetch request for partition at offset
+							var fetches = new List<Fetch>{
+												new Fetch
+													{
+														Topic = topic,
+														PartitionId = partitionId,
+														Offset = offset
+													}
+											};
 
-                            var fetchRequest = new FetchRequest
-                                {
-                                    Fetches = fetches
-                                };
+							var fetchRequest = new FetchRequest
+							{
+								Fetches = fetches
+							};
 
-                            //make request and post to queue
-                            var route = _options.Router.SelectBrokerRoute(topic, partitionId);
-                            var responses = route.Connection.SendAsync(fetchRequest).Result;
+							//make request and post to queue
+							var route = _options.Router.SelectBrokerRoute(topic, partitionId);
+							var responses = await route.Connection.SendAsync(fetchRequest);
+							_disposeToken.Token.ThrowIfCancellationRequested();
 
-                            if (responses.Count > 0)
-                            {
-                                var response = responses.FirstOrDefault(); //we only asked for one response
-                                if (response != null && response.Messages.Count > 0)
-                                {
-                                    foreach (var message in response.Messages)
-                                    {
-                                        _fetchResponseQueue.Add(message, _disposeToken.Token);
+							if (responses.Count > 0)
+							{
+								var response = responses.FirstOrDefault(); //we only asked for one response
+								if (response != null && response.Messages.Count > 0)
+								{
+									foreach (var message in response.Messages)
+									{
+										_fetchResponseQueue.Add(message, _disposeToken.Token);
+									}
 
-                                        if (_disposeToken.IsCancellationRequested) return;
-                                    }
+									var nextOffset = response.Messages.Max(x => x.Meta.Offset) + 1;
+									_partitionOffsetIndex.AddOrUpdate(partitionId, i => nextOffset, (i, l) => nextOffset);
+									continue;
+								}
+							}
 
-                                    var nextOffset = response.Messages.Max(x => x.Meta.Offset) + 1;
-                                    _partitionOffsetIndex.AddOrUpdate(partitionId, i => nextOffset, (i, l) => nextOffset);
-
-                                    // sleep is not needed if responses were received
-                                    continue;
-                                }
-                            }
-
-                            //no message received from server wait a while before we try another long poll
-                            Thread.Sleep(_options.BackoffInterval);
-                        }
-                        catch (Exception ex)
-                        {
-                        	_options.Log.ErrorFormat("Exception occured while polling topic:{0} partition:{1}.  Polling will continue.  Exception={2}", topic, partitionId, ex);
-                        }
-                	}
-                }
-                finally
-                {
-                    _options.Log.DebugFormat("Consumer: Disabling polling task for topic: {0} on parition: {1}", topic, partitionId);
-                    Task tempTask;
-                    _partitionPollingIndex.TryRemove(partitionId, out tempTask);
-                }
+							//no message received from server wait a while before we try another long poll
+							await Task.Delay(_options.BackoffInterval, _disposeToken.Token);
+						}
+						catch (OperationCanceledException)
+						{
+							_log.DebugFormat("Consumer operation cancelled");
+							return;
+						}
+						catch (ResponseTimeoutException)
+						{
+							//long-poll finished, just start it again
+							continue;
+						}
+						catch (Exception ex)
+						{
+							_log.ErrorFormat("Exception occured while polling topic:{0} partition:{1}.  Polling will continue.  Exception={2}", topic, partitionId, ex);
+						}
+					}
+				}
+				finally
+				{
+					_log.DebugFormat("Consumer: Disabling polling task for topic: {0} on parition: {1}", topic, partitionId);
+					Task tempTask;
+					_partitionPollingIndex.TryRemove(partitionId, out tempTask);
+				}
             });
         }
 
@@ -204,11 +214,10 @@ namespace KafkaNet
 
         public void Dispose()
         {
-            _options.Log.DebugFormat("Consumer: Disposing...");
+            _log.DebugFormat("Consumer: Disposing...");
             _disposeToken.Cancel();
-            using (_topicPartitionQueryTimer)
-            using (_metadataQueries)
-            { }
+			_topicPartitionQueryTimer.Dispose();
+			_metadataQueries.Dispose();
         }
     }
 }

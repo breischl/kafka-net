@@ -8,6 +8,6 @@ namespace KafkaNet
 {
     public interface IKafkaConnectionFactory
     {
-        IKafkaConnection Create(Uri kafkaAddress, int responseTimeoutMs, IKafkaLog log);
+        IKafkaConnection Create(Uri kafkaAddress, int responseTimeoutMs);
     }
 }

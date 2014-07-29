@@ -6,6 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using KafkaNet.Common;
 using KafkaNet.Protocol;
+using Common.Logging;
 
 namespace KafkaNet
 {
@@ -25,7 +26,7 @@ namespace KafkaNet
         private readonly ConcurrentDictionary<int, AsyncRequestItem> _requestIndex = new ConcurrentDictionary<int, AsyncRequestItem>();
         private readonly IScheduledTimer _responseTimeoutTimer;
         private readonly int _responseTimeoutMS;
-        private readonly IKafkaLog _log;
+		private readonly ILog _log = LogManager.GetLogger<KafkaConnection>();
         private readonly IKafkaTcpSocket _client;
         private readonly CancellationTokenSource _disposeToken = new CancellationTokenSource();
 		private readonly BlockingCollection<byte[]> _sendQueue = new BlockingCollection<byte[]>(new ConcurrentQueue<byte[]>());
@@ -37,10 +38,9 @@ namespace KafkaNet
         /// <param name="log">Logging interface used to record any log messages created by the connection.</param>
         /// <param name="client">The kafka socket initialized to the kafka server.</param>
         /// <param name="responseTimeoutMs">The amount of time to wait for a message response to be received after sending message to Kafka.</param>
-        public KafkaConnection(IKafkaTcpSocket client, int responseTimeoutMs = DefaultResponseTimeoutMs, IKafkaLog log = null)
+        public KafkaConnection(IKafkaTcpSocket client, int responseTimeoutMs = DefaultResponseTimeoutMs)
         {
 			_client = client;
-            _log = log ?? new DefaultTraceLog();
             _responseTimeoutMS = responseTimeoutMs;
             _responseTimeoutTimer = new ScheduledTimer()
                 .Do(ResponseTimeoutCheck)
@@ -124,13 +124,18 @@ namespace KafkaNet
 				{
 					try
 					{
-						_log.DebugFormat("Awaiting message from: {0}", KafkaUri);
+						_log.TraceFormat("Awaiting message from: {0}", KafkaUri);
 						var messageSize = (await _client.ReadAsync(4)).ToInt32();
 
-						_log.DebugFormat("Received message of size: {0} From: {1}", messageSize, KafkaUri);
+						_log.TraceFormat("Received message of size: {0} From: {1}", messageSize, KafkaUri);
 						var message = await _client.ReadAsync(messageSize);
 
 						CorrelatePayloadToRequest(message);
+					}
+					catch (OperationCanceledException ex) //includes TaskCanceledException
+					{
+						_log.DebugFormat("Connection to server {0} canceled", _client.ServerUri);
+						SetOutstandingRequestFault(ex);
 					}
 					catch (ObjectDisposedException ode)
 					{
@@ -138,16 +143,8 @@ namespace KafkaNet
 					}
 					catch (Exception ex)
 					{
-						_log.ErrorFormat("Exception occured in polling read thread. Exception={0}", ex);
-
-						//Fault any outstanding requests - we're not going to hear back about them
-						var failedRequests = _requestIndex.Values;
-						_requestIndex.Clear();
-
-						foreach (var request in failedRequests)
-						{
-							request.ReceiveTask.SetException(ex);
-						}
+						_log.ErrorFormat("Exception occured in polling read thread for server {0}. Exception={1}", _client.ServerUri, ex);
+						SetOutstandingRequestFault(ex);
 					}
 				}
 			}, TaskCreationOptions.LongRunning);
@@ -227,6 +224,17 @@ namespace KafkaNet
 			return (KafkaUri != null ? KafkaUri.GetHashCode() : 0);
 		}
 		#endregion
+
+		private void SetOutstandingRequestFault(Exception ex)
+		{
+			var failedRequests = _requestIndex.Values;
+			_requestIndex.Clear();
+
+			foreach (var request in failedRequests)
+			{
+				request.ReceiveTask.SetException(ex);
+			}
+		}
 
         public void Dispose()
         {

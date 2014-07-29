@@ -6,6 +6,7 @@ using KafkaNet.Model;
 using KafkaNet.Protocol;
 using NUnit.Framework;
 using kafka_tests.Helpers;
+using Common.Logging;
 
 namespace kafka_tests.Integration
 {
@@ -14,6 +15,7 @@ namespace kafka_tests.Integration
     /// </summary>
     [TestFixture]
     [Category("Integration")]
+	[Timeout(10000)]
     public class KafkaConnectionIntegrationTests
     {
         private KafkaConnection _conn;
@@ -23,28 +25,34 @@ namespace kafka_tests.Integration
         {
             var options = new KafkaOptions(IntegrationConfig.IntegrationUri);
             
-            _conn = new KafkaConnection(new KafkaTcpSocket(new DefaultTraceLog(), options.KafkaServerUri.First()), options.ResponseTimeoutMs, options.Log);
+            _conn = new KafkaConnection(new KafkaTcpSocket(options.KafkaServerUri.First()), options.ResponseTimeoutMs);
         }
+
+		[TearDown]
+		public void TearDown()
+		{
+			_conn.Dispose();
+		}
         
         [Test]
-        public void EnsureTwoRequestsCanCallOneAfterAnother()
+        public async Task EnsureTwoRequestsCanCallOneAfterAnother()
         {
-            var result1 = _conn.SendAsync(new MetadataRequest()).Result;
-            var result2 = _conn.SendAsync(new MetadataRequest()).Result;
+            var result1 = await _conn.SendAsync(new MetadataRequest());
+            var result2 = await _conn.SendAsync(new MetadataRequest());
             Assert.That(result1.Count, Is.EqualTo(1));
             Assert.That(result2.Count, Is.EqualTo(1));
         }
 
         [Test]
-        public void EnsureAsyncRequestResponsesCorrelate()
+        public async Task EnsureAsyncRequestResponsesCorrelate()
         {
             var result1 = _conn.SendAsync(new MetadataRequest());
             var result2 = _conn.SendAsync(new MetadataRequest());
             var result3 = _conn.SendAsync(new MetadataRequest());
 
-            Assert.That(result1.Result.Count, Is.EqualTo(1));
-            Assert.That(result2.Result.Count, Is.EqualTo(1));
-            Assert.That(result3.Result.Count, Is.EqualTo(1));
+            Assert.That((await result1).Count, Is.EqualTo(1));
+            Assert.That((await result2).Count, Is.EqualTo(1));
+            Assert.That((await result3).Count, Is.EqualTo(1));
         }
 
         [Test]

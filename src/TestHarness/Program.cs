@@ -12,10 +12,7 @@ namespace TestHarness
     {
         static void Main(string[] args)
         {
-            var options = new KafkaOptions(new Uri("http://CSDKAFKA01:9092"), new Uri("http://CSDKAFKA02:9092"))
-                {
-                    Log = new ConsoleLog()
-                };
+			var options = new KafkaOptions(new Uri("http://CSDKAFKA01:9092"), new Uri("http://CSDKAFKA02:9092"));
             var router = new BrokerRouter(options);
             var client = new Producer(router);
 

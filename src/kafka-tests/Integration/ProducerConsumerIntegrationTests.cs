@@ -8,14 +8,17 @@ using KafkaNet.Protocol;
 using NUnit.Framework;
 using kafka_tests.Helpers;
 using KafkaNet.Common;
+using Common.Logging;
 
 namespace kafka_tests.Integration
 {
     [TestFixture]
     [Category("Integration")]
-//	[Timeout(10000)]
-    public class ProducerConsumerTests
+	[Timeout(10000)]
+    public class ProducerConsumerIntegrationTests
     {
+		private static readonly ILog _log = LogManager.GetLogger<ProducerConsumerIntegrationTests>();
+
         [Test]
         [TestCase(10, -1)]
         [TestCase(100, -1)]
@@ -62,7 +65,7 @@ namespace kafka_tests.Integration
 					var results = consumer.Consume().Take(numMessages).ToList();
 
                     //ensure the produced messages arrived
-                    Console.WriteLine("Message order:  {0}", string.Join(", ", results.Select(x => x.Value).ToList()));
+					_log.InfoFormat("Message order:  {0}", string.Join(", ", results.Select(x => x.Value).ToList()));
 
 					Assert.That(results.Count, Is.EqualTo(numMessages));
 					for (int i = 0; i < numMessages; i++)
@@ -80,39 +83,39 @@ namespace kafka_tests.Integration
             using (var router = new BrokerRouter(new KafkaOptions(IntegrationConfig.IntegrationUri)))
             using (var producer = new Producer(router))
             {
-                var offsets = producer.GetTopicOffsetAsync(IntegrationConfig.IntegrationTopic).Result
-                    .Select(x => new OffsetPosition(x.PartitionId, x.Offsets.Max())).ToArray();
+				var offsetResponses = await producer.GetTopicOffsetAsync(IntegrationConfig.IntegrationTopic);
+				var startOffsets = offsetResponses.Select(x => new OffsetPosition(x.PartitionId, x.Offsets.Max())).ToArray();
 
-                using (var consumer = new Consumer(new ConsumerOptions(IntegrationConfig.IntegrationTopic, router), offsets))
+				using (var consumer = new Consumer(new ConsumerOptions(IntegrationConfig.IntegrationTopic, router), startOffsets))
                 {
-					for (int i = 0; i < numMessages; i++)
-                    {
-						await producer.SendMessageAsync(IntegrationConfig.IntegrationTopic, new[] { new Message { Value = i.ToBytes(), Key = null } });
-                    }
-
-                    var sentMessages = consumer.Consume().Take(20).ToList();
+					var tasks = Enumerable.Range(0, numMessages).Select(i => producer.SendMessageAsync(IntegrationConfig.IntegrationTopic, new[] { new Message { Value = i.ToBytes(), Key = "1".ToBytes() } }));
+					Task.WaitAll(tasks.ToArray());
+					
+                    var results = consumer.Consume().Take(numMessages).ToList();
 
                     //ensure the produced messages arrived
-                    Console.WriteLine("Message order:  {0}", string.Join(", ", sentMessages.Select(x => x.Value).ToList()));
+					_log.InfoFormat("Message order:  {0}", string.Join(", ", results.Select(x => x.Value).ToList()));
 
-					Assert.That(sentMessages.Count, Is.EqualTo(numMessages));
+					Assert.That(results.Count, Is.EqualTo(numMessages));
 					for (int i = 0; i < numMessages; i++)
 					{
-						Assert.AreEqual(i.ToBytes(), sentMessages[i].Value);
+						var msg = results.FirstOrDefault(r => r.Value.ToInt32() == i);
+						Assert.That(msg, Is.Not.Null);
 					}
 
                     //seek back to initial offset
-                    consumer.SetOffsetPosition(offsets);
+					consumer.SetOffsetPosition(startOffsets);
 
-                    var resetPositionMessages = consumer.Consume().Take(20).ToList();
+                    var resetPositionMessages = consumer.Consume().Take(numMessages).ToList();
 
                     //ensure all produced messages arrive again
-                    Console.WriteLine("Message order:  {0}", string.Join(", ", resetPositionMessages.Select(x => x.Value).ToList()));
+					_log.InfoFormat("Message order:  {0}", string.Join(", ", resetPositionMessages.Select(x => x.Value.ToInt32())));
 
 					Assert.That(resetPositionMessages.Count, Is.EqualTo(numMessages));
 					for (int i = 0; i < numMessages; i++)
 					{
-						Assert.AreEqual(i.ToBytes(), sentMessages[i].Value);
+						var msg = results.FirstOrDefault(r => r.Value.ToInt32() == i);
+						Assert.That(msg, Is.Not.Null);
 					}
                 }
             }
@@ -125,25 +128,24 @@ namespace kafka_tests.Integration
             using (var router = new BrokerRouter(new KafkaOptions(IntegrationConfig.IntegrationUri)))
             using (var producer = new Producer(router))
             {
-                var startOffsets = producer.GetTopicOffsetAsync(IntegrationConfig.IntegrationTopic).Result
-                    .Select(x => new OffsetPosition(x.PartitionId, x.Offsets.Max())).ToArray();
+                var offsetResponses = await producer.GetTopicOffsetAsync(IntegrationConfig.IntegrationTopic);
+				var startOffsets = offsetResponses.Select(x => new OffsetPosition(x.PartitionId, x.Offsets.Max())).ToArray();
 
-                using (var consumer = new Consumer(new ConsumerOptions(IntegrationConfig.IntegrationTopic, router), startOffsets))
+				using (var consumer = new Consumer(new ConsumerOptions(IntegrationConfig.IntegrationTopic, router), startOffsets))
                 {
-					for (int i = 0; i < numMessages; i++)
-                    {
-						await producer.SendMessageAsync(IntegrationConfig.IntegrationTopic, new[] { new Message { Value = i.ToBytes(), Key = "1".ToBytes() } });
-                    }
+					var tasks = Enumerable.Range(0, numMessages).Select(i => producer.SendMessageAsync(IntegrationConfig.IntegrationTopic, new[] { new Message { Value = i.ToBytes(), Key = "1".ToBytes() } }));
+					Task.WaitAll(tasks.ToArray());
 
-                    var results = consumer.Consume().Take(20).ToList();
+					var results = consumer.Consume().Take(numMessages).ToList();
 
                     //ensure the produced messages arrived
 					for (int i = 0; i < numMessages; i++)
                     {
-						Assert.That(results[i].Value == i.ToBytes());
+						var msg = results.FirstOrDefault(r => r.Value.ToInt32() == i);
+						Assert.That(msg, Is.Not.Null);
                     }
 
-                    //the current offsets should be 20 positions higher than start
+					//the current offsets should be numMessages positions higher than start
                     var currentOffsets = consumer.GetOffsetPosition();
 					Assert.That(currentOffsets.Sum(x => x.Offset) - startOffsets.Sum(x => x.Offset), Is.EqualTo(numMessages));
                 }
@@ -154,7 +156,7 @@ namespace kafka_tests.Integration
         public async Task ConsumerShouldNotLoseMessageWhenBlocked()
         {
 			const int numMessages = 5;
-            var testId = Guid.NewGuid().ToString();
+            var testId = Guid.NewGuid();
 
             using (var router = new BrokerRouter(new KafkaOptions(IntegrationConfig.IntegrationUri)))
             using (var producer = new Producer(router))
@@ -168,19 +170,21 @@ namespace kafka_tests.Integration
 
 					for (int i = 0; i < numMessages; i++)
                     {
-                        await producer.SendMessageAsync(IntegrationConfig.IntegrationTopic, new[] { new Message { Value = i.ToBytes(), Key = testId.ToBytes() } });
+						//Intentionally not awaiting this
+                        producer.SendMessageAsync(IntegrationConfig.IntegrationTopic, new[] { new Message { Value = i.ToBytes(), Key = testId.ToByteArray() } });
                     }
 
+					var results = consumer.Consume().Take(numMessages).ToList();
 					for (int i = 0; i < numMessages; i++)
                     {
-                        var result = consumer.Consume().Take(1).First();
-                        Assert.That(result.Key, Is.EqualTo(testId.ToBytes()));
-                        Assert.That(result.Value, Is.EqualTo(i.ToBytes()));
+						var msg = results.FirstOrDefault(m => m.Value.ToInt32() == i);
+						Assert.That(msg, Is.Not.Null);
+						Assert.That(new Guid(msg.Key), Is.EqualTo(testId));
+                        Assert.That(msg.Value.ToInt32(), Is.EqualTo(i));
                     }
                 }
             }
         }
-
 
         [Test]
         public async Task ConsumerShouldMoveToNextAvailableOffsetWhenQueryingForNextMessage()
@@ -196,14 +200,8 @@ namespace kafka_tests.Integration
                 using (var consumer = new Consumer(new ConsumerOptions(IntegrationConfig.IntegrationTopic, router),
                      offsets.Select(x => new OffsetPosition(x.PartitionId, x.Offsets.Max() - 1000)).ToArray()))
                 {
-                    var data = new List<Message>();
-
-                    var stream = consumer.Consume();
-
-                    var takeTask = Task.Factory.StartNew(() => data.AddRange(stream.Take(2000)));
-
-                    takeTask.Wait(TimeSpan.FromSeconds(10));
-
+					var data = consumer.Consume().Take(2000).ToList();
+					
                     var consumerOffset = consumer.GetOffsetPosition().OrderBy(x => x.Offset).ToList();
                     var serverOffset = offsets.Select(x => new OffsetPosition(x.PartitionId, x.Offsets.Max())).OrderBy(x => x.Offset).ToList();
 

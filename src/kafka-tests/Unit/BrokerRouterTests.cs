@@ -29,7 +29,7 @@ namespace kafka_tests.Unit
             _partitionSelectorMock = _kernel.GetMock<IPartitionSelector>();
             _connMock1 = _kernel.GetMock<IKafkaConnection>();
             _factoryMock = _kernel.GetMock<IKafkaConnectionFactory>();
-            _factoryMock.Setup(x => x.Create(It.Is<Uri>(uri => uri.Port == 1), It.IsAny<int>(), It.IsAny<IKafkaLog>())).Returns(() => _connMock1.Object);
+            _factoryMock.Setup(x => x.Create(It.Is<Uri>(uri => uri.Port == 1), It.IsAny<int>())).Returns(() => _connMock1.Object);
         }
 
         [Test]
@@ -57,7 +57,7 @@ namespace kafka_tests.Unit
                       .Returns(() => Task.Factory.StartNew(() => new List<MetadataResponse> { CreateMetaResponse() }));
 
             var topics = router.GetTopicMetadata(TestTopic);
-            _factoryMock.Verify(x => x.Create(It.Is<Uri>(uri => uri.Port == 2), It.IsAny<int>(), It.IsAny<IKafkaLog>()), Times.Once());
+            _factoryMock.Verify(x => x.Create(It.Is<Uri>(uri => uri.Port == 2), It.IsAny<int>()), Times.Once());
         }
 
         #region MetadataRequest Tests...

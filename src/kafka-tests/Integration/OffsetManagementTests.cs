@@ -6,11 +6,13 @@ using KafkaNet.Model;
 using KafkaNet.Protocol;
 using NUnit.Framework;
 using kafka_tests.Helpers;
+using System.Threading.Tasks;
 
 namespace kafka_tests.Integration
 {
     [TestFixture]
     [Category("Integration")]
+	[Timeout(10000)]
     public class OffsetManagementTests
     {
         private readonly KafkaOptions Options = new KafkaOptions(IntegrationConfig.IntegrationUri);
@@ -22,7 +24,8 @@ namespace kafka_tests.Integration
         }
 
         [Test]
-        public void OffsetFetchRequestOfNonExistingGroupShouldReturnNoError()
+		[Ignore("API isn't fully implemented, and this test seems to be incorrect. It also assumes data in Kafka that isn't actually set up in the test")]
+        public async Task OffsetFetchRequestOfNonExistingGroupShouldReturnNoError()
         {
             //From documentation: https://cwiki.apache.org/confluence/display/KAFKA/A+Guide+To+The+Kafka+Protocol#AGuideToTheKafkaProtocol-OffsetFetchRequest
             //Note that if there is no offset associated with a topic-partition under that consumer group the broker does not set an error code 
@@ -30,11 +33,10 @@ namespace kafka_tests.Integration
             const int partitionId = 0;
             using (var router = new BrokerRouter(Options))
             {
-                var request = CreateOffsetFetchRequest(Guid.NewGuid().ToString(), partitionId);
+				var conn = router.SelectBrokerRoute(IntegrationConfig.IntegrationTopic, partitionId);
 
-                var conn = router.SelectBrokerRoute(IntegrationConfig.IntegrationTopic, partitionId);
-
-                var response = conn.Connection.SendAsync(request).Result.FirstOrDefault();
+				var request = CreateOffsetFetchRequest(Guid.NewGuid().ToString(), partitionId);
+                var response = (await conn.Connection.SendAsync(request)).FirstOrDefault();
 
                 Assert.That(response, Is.Not.Null);
                 Assert.That(response.Error, Is.EqualTo((int)ErrorResponseCode.NoError));

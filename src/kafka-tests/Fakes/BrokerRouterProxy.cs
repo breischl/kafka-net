@@ -50,8 +50,8 @@ namespace kafka_tests
             _fakeConn1.FetchResponseFunction = () => { Thread.Sleep(500); return null; };
             
             _factoryMock = _kernel.GetMock<IKafkaConnectionFactory>();
-            _factoryMock.Setup(x => x.Create(It.Is<Uri>(uri => uri.Port == 1), It.IsAny<int>(), It.IsAny<IKafkaLog>())).Returns(() => _fakeConn0);
-            _factoryMock.Setup(x => x.Create(It.Is<Uri>(uri => uri.Port == 2), It.IsAny<int>(), It.IsAny<IKafkaLog>())).Returns(() => _fakeConn1);
+            _factoryMock.Setup(x => x.Create(It.Is<Uri>(uri => uri.Port == 1), It.IsAny<int>())).Returns(() => _fakeConn0);
+            _factoryMock.Setup(x => x.Create(It.Is<Uri>(uri => uri.Port == 2), It.IsAny<int>())).Returns(() => _fakeConn1);
         }
 
         public IBrokerRouter Create()
