@@ -101,20 +101,21 @@ namespace kafka_tests.Unit
             Assert.That(b2.PartitionId, Is.EqualTo(1));
         }
 
+		[Test]
+		public void KeyHashShouldSelectEachPartitionType()
+		{
+			var selector = new DefaultPartitionSelector();
+
+			//Sadly this test is sensitive to the exact key values chosen
+			//So changing the hashing algorithm may break this test
+			var first = selector.Select(_topicA, new byte[] { 0x49 });
+			var second = selector.Select(_topicA, new byte[] { 0x50 });
+
+			Assert.That(first.PartitionId, Is.EqualTo(0));
+			Assert.That(second.PartitionId, Is.EqualTo(1));
+		}
+
         [Test]
-        public void KeyHashShouldSelectEachPartitionType()
-        {
-            var selector = new DefaultPartitionSelector();
-
-            var first = selector.Select(_topicA, "0".ToBytes());
-            var second = selector.Select(_topicA, "1".ToBytes());
-
-            Assert.That(first.PartitionId, Is.EqualTo(0));
-            Assert.That(second.PartitionId, Is.EqualTo(1));
-        }
-
-        [Test]
-        [ExpectedException(typeof(InvalidPartitionException))]
         public void KeyHashShouldThrowExceptionWhenChoosesAPartitionIdThatDoesNotExist()
         {
             var selector = new DefaultPartitionSelector();
@@ -127,11 +128,15 @@ namespace kafka_tests.Unit
                 };
 
 
-            selector.Select(topic, "1".ToBytes());
+			Assert.Throws<InvalidPartitionException>(() =>
+			{
+				//Sadly this test is sensitive to the exact key values chosen
+				//So changing the hashing algorithm may break this test
+				selector.Select(topic, new byte[] { 0x50 });
+			});
         }
 
         [Test]
-        [ExpectedException(typeof(ApplicationException))]
         public void SelectorShouldThrowExceptionWhenPartitionsAreEmpty()
         {
             var selector = new DefaultPartitionSelector();
@@ -140,7 +145,11 @@ namespace kafka_tests.Unit
                 Name = "emptyPartition",
                 Partitions = new List<Partition>()
             };
-            selector.Select(topic, "1".ToBytes());
+
+			Assert.Throws<ApplicationException>(() =>
+			{
+				selector.Select(topic, "1".ToBytes());
+			});
         }
 
     }
