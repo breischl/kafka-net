@@ -17,6 +17,8 @@ namespace KafkaNet.Protocol
         
 		/// <summary>
         /// The maximum amount of time to block for the MinBytes to be available before returning.
+		/// Note that setting this too long may result in client timeouts happening before the server returns. 
+		/// Recommended maximum setting is 5000 msec.
         /// </summary>
         public int MaxWaitTime = DefaultMaxBlockingWaitTime;
         
@@ -25,7 +27,7 @@ namespace KafkaNet.Protocol
         /// </summary>
         public int MinBytes = DefaultMinBlockingByteBufferSize;
 
-        public List<Fetch> Fetches { get; set; }
+        public List<FetchRequestItem> Fetches { get; set; }
 
         public byte[] Encode()
         {
@@ -40,7 +42,7 @@ namespace KafkaNet.Protocol
         private byte[] EncodeFetchRequest(FetchRequest request)
         {
             var message = new WriteByteStream();
-            if (request.Fetches == null) request.Fetches = new List<Fetch>();
+            if (request.Fetches == null) request.Fetches = new List<FetchRequestItem>();
 
             message.Pack(EncodeHeader(request));
 
@@ -67,9 +69,9 @@ namespace KafkaNet.Protocol
         }
     }
 
-    public class Fetch
+    public class FetchRequestItem
     {
-        public Fetch()
+        public FetchRequestItem()
         {
             MaxBytes = FetchRequest.DefaultMinBlockingByteBufferSize * 8;
         }
@@ -78,15 +80,18 @@ namespace KafkaNet.Protocol
         /// The name of the topic.
         /// </summary>
         public string Topic { get; set; }
+
         /// <summary>
         /// The id of the partition the fetch is for.
         /// </summary>
         public int PartitionId { get; set; }
-        /// <summary>
+        
+		/// <summary>
         /// The offset to begin this fetch from.
         /// </summary>
         public long Offset { get; set; }
-        /// <summary>
+        
+		/// <summary>
         /// The maximum bytes to include in the message set for this partition. This helps bound the size of the response.
         /// </summary>
         public int MaxBytes { get; set; }

@@ -48,9 +48,9 @@ namespace kafka_tests.Integration
 
 			var fetchRequest = new FetchRequest()
 			{
-				Fetches = new List<Fetch>()
+				Fetches = new List<FetchRequestItem>()
 				{
-					new Fetch(){
+					new FetchRequestItem(){
 						Offset = 0,
 						PartitionId = partition,
 						Topic = IntegrationConfig.IntegrationTopic

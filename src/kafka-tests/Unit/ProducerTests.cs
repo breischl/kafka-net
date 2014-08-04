@@ -36,20 +36,17 @@ namespace kafka_tests.Unit
 		[Test]
 		public async Task ProducerShouldGroupMessagesByBroker()
 		{
-			using (var router = _routerProxy.Create())
-			{
-				var producer = new Producer(router);
-				var messages = new List<Message>
+			var producer = new Producer(_router);
+			var messages = new List<Message>
                 {
                     new Message{Value = BitConverter.GetBytes(1)}, new Message{Value = BitConverter.GetBytes(2)}
                 };
 
-				var response = await producer.SendMessageAsync("UnitTest", messages);
+			var response = await producer.SendMessageAsync("UnitTest", messages);
 
-				Assert.That(response.MessageCount, Is.EqualTo(2));
-				Assert.That(_routerProxy.BrokerConn0.ProduceRequestCallCount, Is.EqualTo(1));
-				Assert.That(_routerProxy.BrokerConn1.ProduceRequestCallCount, Is.EqualTo(1));
-			}
+			Assert.That(response.MessageCount, Is.EqualTo(2));
+			Assert.That(_routerProxy.BrokerConn0.ProduceRequestCallCount, Is.EqualTo(1));
+			Assert.That(_routerProxy.BrokerConn1.ProduceRequestCallCount, Is.EqualTo(1));
 		}
 
 		[Test]

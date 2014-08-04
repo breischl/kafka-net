@@ -130,8 +130,8 @@ namespace KafkaNet
 							long offset = _partitionOffsetIndex.AddOrUpdate(partitionId, i => 0, (i, currentOffset) => currentOffset);
 
 							//build a fetch request for partition at offset
-							var fetches = new List<Fetch>{
-												new Fetch
+							var fetches = new List<FetchRequestItem>{
+												new FetchRequestItem
 													{
 														Topic = topic,
 														PartitionId = partitionId,
@@ -141,11 +141,7 @@ namespace KafkaNet
 
 							var fetchRequest = new FetchRequest
 							{
-								Fetches = fetches,
-								
-								//for some reason setting these cause tests to intermittently time out.
-								//MinBytes = 100,
-								//MaxWaitTime = 10000
+								Fetches = fetches
 							};
 
 							//make request and post to queue

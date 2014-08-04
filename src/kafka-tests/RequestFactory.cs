@@ -26,9 +26,9 @@ namespace kafka_tests
             return new FetchRequest
             {
                 CorrelationId = 1,
-                Fetches = new List<Fetch>(new[]
+                Fetches = new List<FetchRequestItem>(new[]
                         {
-                            new Fetch
+                            new FetchRequestItem
                                 {
                                     Topic = topic,
                                     PartitionId = partitionId,
