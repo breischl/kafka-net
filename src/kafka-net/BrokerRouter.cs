@@ -21,7 +21,7 @@ namespace KafkaNet
     public class BrokerRouter : IBrokerRouter
     {
 		private static readonly ILog _log = LogManager.GetLogger<BrokerRouter>();
-        private readonly object _threadLock = new object();
+        private readonly object _metadataLock = new object();
         private readonly KafkaOptions _kafkaOptions;
         private readonly ConcurrentDictionary<int, IKafkaConnection> _brokerConnectionIndex = new ConcurrentDictionary<int, IKafkaConnection>();
         private readonly ConcurrentDictionary<string, Topic> _topicIndex = new ConcurrentDictionary<string, Topic>();
@@ -31,8 +31,10 @@ namespace KafkaNet
         {
             _kafkaOptions = kafkaOptions;
             _defaultConnections
-                .AddRange(kafkaOptions.KafkaServerUri.Distinct()
-                .Select(uri => _kafkaOptions.KafkaConnectionFactory.Create(uri, _kafkaOptions.ResponseTimeoutMs)));
+                .AddRange(kafkaOptions.KafkaServerUri
+							.Distinct()
+							.Select(uri => _kafkaOptions.KafkaConnectionFactory.Create(uri, _kafkaOptions.ResponseTimeoutMs))
+				);
         }
 
         /// <summary>
@@ -119,28 +121,26 @@ namespace KafkaNet
         /// </remarks>
         public void RefreshTopicMetadata(params string[] topics)
         {
-            lock (_threadLock)
-            {
-                _log.DebugFormat("BrokerRouter: Refreshing metadata for topics: {0}", string.Join(",", topics));
+			lock (_metadataLock)
+			{
+				_log.DebugFormat("BrokerRouter: Refreshing metadata for topics: {0}", string.Join(",", topics));
 
-                //use the initial default connections to retrieve metadata
-                if (_defaultConnections.Count > 0)
-                {
-                    CycleConnectionsForTopicMetadata(_defaultConnections, topics);
-                    if (_brokerConnectionIndex.Values.Count > 0)
-                    {
-                        _defaultConnections.ForEach(x => { using (x) { } });
-                        _defaultConnections.Clear();
-                    }
-                    return;
-                }
-
-                //once the default is used we can then use the brokers to cycle for metadata
-                if (_brokerConnectionIndex.Values.Count > 0)
-                {
-                    CycleConnectionsForTopicMetadata(_brokerConnectionIndex.Values, topics);
-                }
-            }
+				//use the initial default connections to retrieve metadata
+				if (_defaultConnections.Count > 0)
+				{
+					CycleConnectionsForTopicMetadata(_defaultConnections, topics);
+					if (_brokerConnectionIndex.Values.Count > 0)
+					{
+						_defaultConnections.ForEach(x => x.Dispose());
+						_defaultConnections.Clear();
+					}
+				}
+				else if (_brokerConnectionIndex.Values.Count > 0)
+				{
+					//once the default is used we can then use the brokers to cycle for metadata
+					CycleConnectionsForTopicMetadata(_brokerConnectionIndex.Values, topics);
+				}
+			}
         }
 
         private TopicSearchResult SearchCacheForTopics(IEnumerable<string> topics)
@@ -177,7 +177,14 @@ namespace KafkaNet
                 route = TryGetRouteFromCache(topic, partition);
             }
 
-            if (route != null) return route;
+			if (route != null)
+			{
+				if (!route.Connection.IsOpen)
+				{
+					_log.WarnFormat("Somebody closed BrokerRoute {0} to server {1}", route.Connection.ConnectionId, route.Connection.KafkaUri);
+				}
+				return route;
+			}
 
             throw new LeaderNotFoundException(string.Format("Lead broker cannot be found for parition: {0}, leader: {1}", partition.PartitionId, partition.LeaderId));
         }
@@ -230,22 +237,29 @@ namespace KafkaNet
 
         private void UpdateInternalMetadataCache(MetadataResponse metadata)
         {
-            foreach (var broker in metadata.Brokers)
-            {
-                var localBroker = broker;
-                _brokerConnectionIndex.AddOrUpdate(broker.BrokerId,
-                    i =>
-                    {
-                        return _kafkaOptions.KafkaConnectionFactory.Create(localBroker.Address, _kafkaOptions.ResponseTimeoutMs);
-                    },
-                    (i, connection) =>
-                    {
-                        //if a connection changes for a broker close old connection and create a new one
-                        if (connection.KafkaUri == localBroker.Address) return connection;
-                        _log.WarnFormat("Broker:{0} Uri changed from:{1} to {2}", localBroker.BrokerId, connection.KafkaUri, localBroker.Address);
-                        using (connection) { return _kafkaOptions.KafkaConnectionFactory.Create(localBroker.Address, _kafkaOptions.ResponseTimeoutMs); }
-                    });
-            }
+			foreach (var broker in metadata.Brokers)
+			{
+				var localBroker = broker;
+				_brokerConnectionIndex.AddOrUpdate(broker.BrokerId,
+					i =>
+					{
+						return _kafkaOptions.KafkaConnectionFactory.Create(localBroker.Address, _kafkaOptions.ResponseTimeoutMs);
+					},
+					(i, connection) =>
+					{
+						//if a connection changes for a broker close old connection and create a new one
+						if (connection.KafkaUri == localBroker.Address)
+						{
+							return connection;
+						}
+						else
+						{
+							_log.WarnFormat("Broker:{0} Uri changed from:{1} to {2}", localBroker.BrokerId, connection.KafkaUri, localBroker.Address);
+							connection.Dispose();
+							return _kafkaOptions.KafkaConnectionFactory.Create(localBroker.Address, _kafkaOptions.ResponseTimeoutMs);
+						}
+					});
+			}
 
             foreach (var topic in metadata.Topics)
             {
@@ -256,8 +270,8 @@ namespace KafkaNet
 
         public void Dispose()
         {
-            _defaultConnections.ForEach(conn => { using (conn) { } });
-            _brokerConnectionIndex.Values.ToList().ForEach(conn => { using (conn) { } });
+			_defaultConnections.ForEach(conn => conn.Dispose());
+			_brokerConnectionIndex.Values.ToList().ForEach(conn => conn.Dispose());
         }
     }
 

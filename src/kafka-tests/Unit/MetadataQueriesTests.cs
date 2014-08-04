@@ -76,14 +76,5 @@ namespace kafka_tests.Unit
         }
 
         #endregion
-
-        [Test]
-        public void EnsureCommonQueriesDisposesRouter()
-        {
-            var router = _kernel.GetMock<IBrokerRouter>();
-            var common = new MetadataQueries(router.Object);
-            using (common) { }
-            router.Verify(x => x.Dispose(), Times.Once());
-        }
     }
 }

@@ -12,30 +12,55 @@ namespace KafkaNet.Common
     /// </summary>
     public static class Extensions
     {
+		private static readonly Encoding StringEncoding = new UTF8Encoding(false);
+
         public static byte[] ToIntSizedBytes(this string value)
         {
             if (string.IsNullOrEmpty(value)) return (-1).ToBytes();
 
             return value.Length.ToBytes()
-                        .Concat(value.ToBytes())
+                        .Concat(value.ToUnsizedBytes())
                         .ToArray();
         }
 
+		/// <summary>
+		/// Convert to a Kafka protocol string (ASCII encoded, prefixed with Int16 size of string)
+		/// </summary>
+		/// <param name="value"></param>
+		/// <returns></returns>
 		public static byte[] ToInt16SizedBytes(this string value)
         {
-            if (string.IsNullOrEmpty(value)) return (-1).ToBytes();
+			if (string.IsNullOrEmpty(value))
+			{
+				return ((short)-1).ToBytes();
+			}
 
-            return ((Int16)value.Length).ToBytes()
-                        .Concat(value.ToBytes())
+			var bytes = value.ToUnsizedBytes();
+
+            return ((Int16)bytes.Length).ToBytes()
+                        .Concat(bytes)
                         .ToArray();
         }
 
-        public static byte[] ToBytes(this string value)
+		/// <summary>
+		/// Convert to bytes with the UTF8 encoding. 
+		/// </summary>
+		/// <param name="value"></param>
+		/// <returns></returns>
+        public static byte[] ToUnsizedBytes(this string value)
         {
-            if (string.IsNullOrEmpty(value)) return (-1).ToBytes();
-            
-            //UTF8 is array of bytes, no endianness
-            return Encoding.UTF8.GetBytes(value);
+			if (value == null)
+			{
+				return null;
+			}
+			else if (value.Length == 0)
+			{
+				return new byte[0];
+			}
+			else
+			{
+				return StringEncoding.GetBytes(value);
+			}
         }
 
         public static byte[] ToBytes(this Int16 value)
@@ -80,6 +105,11 @@ namespace KafkaNet.Common
 
 		public static byte[] ToIntPrefixedBytes(this byte[] value)
 		{
+			if (value == null || value.Length == 0)
+			{
+				return (-1).ToBytes();
+			}
+
 			return value.Length.ToBytes()
 						.Concat(value)
 						.ToArray();

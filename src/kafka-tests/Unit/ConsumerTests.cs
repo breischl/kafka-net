@@ -17,7 +17,6 @@ namespace kafka_tests.Unit
     [Category("Unit")]
     public class ConsumerTests
     {
-       
         [Test]
         public void CancellationShouldInterruptConsumption()
         {
@@ -104,33 +103,6 @@ namespace kafka_tests.Unit
 
                 Assert.That(consumer.ConsumerTaskCount, Is.EqualTo(2));
             }
-        }
-
-
-        [Test]
-        public void ConsumerShouldReturnOffset()
-        {
-            var routerProxy = new BrokerRouterProxy(new MoqMockingKernel());
-            routerProxy.BrokerConn0.FetchResponseFunction = () => { return new FetchResponse(); };
-            var router = routerProxy.Create();
-            var options = CreateOptions(router);
-            options.PartitionWhitelist = new List<int>();
-            using (var consumer = new Consumer(options))
-            {
-                var test = consumer.Consume();
-                TaskTest.WaitFor(() => consumer.ConsumerTaskCount >= 2);
-
-                Assert.That(consumer.ConsumerTaskCount, Is.EqualTo(2));
-            }
-        }
-        
-        [Test]
-        public void EnsureConsumerDisposesRouter()
-        {
-            var router = new MoqMockingKernel().GetMock<IBrokerRouter>();
-            var consumer = new Consumer(CreateOptions(router.Object));
-            using (consumer) { }
-            router.Verify(x => x.Dispose(), Times.Once());
         }
 
         [Test]

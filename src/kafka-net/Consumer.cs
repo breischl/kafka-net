@@ -44,7 +44,11 @@ namespace KafkaNet
                 .Every(TimeSpan.FromMilliseconds(_options.TopicPartitionQueryTimeMs))
                 .StartingAt(DateTime.Now);
 
-            SetOffsetPosition(positions);
+			foreach (var position in positions)
+			{
+				var temp = position;
+				_partitionOffsetIndex.AddOrUpdate(position.PartitionId, _ => temp.Offset, (_, __) => temp.Offset);
+			}
         }
 
         /// <summary>
@@ -58,26 +62,13 @@ namespace KafkaNet
         /// <returns>Blocking enumberable of messages from Kafka.</returns>
         public IEnumerable<Message> Consume(CancellationToken? cancellationToken = null)
         {
-            _log.DebugFormat("Consumer: Beginning consumption of topic: {0}", _options.Topic);
+            _log.DebugFormat("Beginning consumption of topic: {0}", _options.Topic);
             _topicPartitionQueryTimer.Begin();
 
 			var cancelToken = CancellationTokenSource.CreateLinkedTokenSource(_disposeToken.Token, cancellationToken ?? CancellationToken.None).Token;
             return _fetchResponseQueue.GetConsumingEnumerable(cancelToken);
         }
-
-        /// <summary>
-        /// Force reset the offset position for a specific partition to a specific offset value.
-        /// </summary>
-        /// <param name="positions">Collection of positions to reset to.</param>
-        public void SetOffsetPosition(params OffsetPosition[] positions)
-        {
-            foreach (var position in positions)
-            {
-                var temp = position;
-                _partitionOffsetIndex.AddOrUpdate(position.PartitionId, i => temp.Offset, (i, l) => temp.Offset);
-            }
-        }
-
+		
         /// <summary>
         /// Get the current running position (offset) for all consuming partition.
         /// </summary>
@@ -94,7 +85,7 @@ namespace KafkaNet
             {
                 if (Interlocked.Increment(ref _ensureOneThread) == 1)
                 {
-                    _log.DebugFormat("Consumer: Refreshing partitions for topic: {0}", _options.Topic);
+                    _log.DebugFormat("Refreshing partitions for topic: {0}", _options.Topic);
                     var topic = _options.Router.GetTopicMetadata(_options.Topic);
                     if (topic.Count <= 0) throw new ApplicationException(string.Format("Unable to get metadata for topic:{0}.", _options.Topic));
                     _topic = topic.First();
@@ -130,7 +121,7 @@ namespace KafkaNet
             {
 				try
 				{
-					_log.DebugFormat("Consumer: Creating polling task for topic: {0} on parition: {1}", topic, partitionId);
+					_log.DebugFormat("Creating polling task for topic: {0} parition: {1}", topic, partitionId);
 					while (_disposeToken.IsCancellationRequested == false)
 					{
 						try
@@ -150,7 +141,11 @@ namespace KafkaNet
 
 							var fetchRequest = new FetchRequest
 							{
-								Fetches = fetches
+								Fetches = fetches,
+								
+								//for some reason setting these cause tests to intermittently time out.
+								//MinBytes = 100,
+								//MaxWaitTime = 10000
 							};
 
 							//make request and post to queue
@@ -195,7 +190,7 @@ namespace KafkaNet
 				}
 				finally
 				{
-					_log.DebugFormat("Consumer: Disabling polling task for topic: {0} on parition: {1}", topic, partitionId);
+					_log.DebugFormat("Disabling polling task for topic: {0} on parition: {1}", topic, partitionId);
 					Task tempTask;
 					_partitionPollingIndex.TryRemove(partitionId, out tempTask);
 				}
@@ -214,10 +209,9 @@ namespace KafkaNet
 
         public void Dispose()
         {
-            _log.DebugFormat("Consumer: Disposing...");
+            _log.DebugFormat("Disposing...");
             _disposeToken.Cancel();
 			_topicPartitionQueryTimer.Dispose();
-			_metadataQueries.Dispose();
         }
     }
 }

@@ -14,3 +14,5 @@ using System.Runtime.InteropServices;
 [assembly: GuidAttribute("eb234ec0-d838-4abd-9224-479ca06f969d")]
 [assembly: AssemblyVersion("1.0.0.0")]
 [assembly: AssemblyFileVersion("1.0.0.0")]
+
+[assembly: InternalsVisibleTo("kafka-tests")]

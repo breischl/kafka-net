@@ -148,7 +148,7 @@ namespace kafka_tests.Unit
 
 			Assert.Throws<ApplicationException>(() =>
 			{
-				selector.Select(topic, "1".ToBytes());
+				selector.Select(topic, "1".ToUnsizedBytes());
 			});
         }
 

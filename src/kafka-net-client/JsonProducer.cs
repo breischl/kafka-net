@@ -6,10 +6,11 @@ using System.Threading.Tasks;
 using KafkaNet.Protocol;
 using Newtonsoft.Json;
 using KafkaNet.Common;
+using KafkaNet.Model;
 
 namespace KafkaNet.Client
 {
-    public class JsonProducer : IDisposable
+    public class JsonProducer
     {
         private readonly Producer _producer;
 
@@ -18,9 +19,9 @@ namespace KafkaNet.Client
             _producer = new Producer(brokerRouter);
         }
 
-        public Task<List<ProduceResponse>> Publish<T>(string topic, IEnumerable<T> messages, Int16 acks = 1, int timeoutMS = 1000) where T : class 
+        public Task<ProduceResult> Publish<T>(string topic, IEnumerable<T> messages, Int16 acks = 1, int timeoutMS = 1000) where T : class 
         {
-            return _producer.SendMessageAsync(topic, ConvertToKafkaMessage(messages), acks, timeoutMS);
+            return _producer.SendMessageAsync(topic, ConvertToKafkaMessage(messages));
         }
 
         private static IEnumerable<Message> ConvertToKafkaMessage<T>(IEnumerable<T> messages) where T : class 
@@ -29,7 +30,7 @@ namespace KafkaNet.Client
 
             return messages.Select(m => new Message
                 {
-                    Key = hasKey ? GetKeyPropertyValue(m).ToBytes() : null,
+                    Key = hasKey ? GetKeyPropertyValue(m).ToUnsizedBytes() : null,
                     Value = Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(m))
                 });
         }
@@ -41,11 +42,6 @@ namespace KafkaNet.Client
 
             if (info == null) return null;
             return (string)info.GetValue(message);
-        }
-
-        public void Dispose()
-        {
-            using (_producer) { }
         }
     }
 }

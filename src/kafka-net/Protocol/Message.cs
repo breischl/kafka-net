@@ -8,28 +8,12 @@ using KafkaNet.Common;
 
 namespace KafkaNet.Protocol
 {
-    /// <summary>
-    /// Payload represents a collection of messages to be posted to a specified Topic on specified Partition.
-    /// </summary>
-    public class Payload
-    {
-        public Payload()
-        {
-            Codec = MessageCodec.CodecNone;
-        }
-
-        public string Topic { get; set; }
-        public int Partition { get; set; }
-        public MessageCodec Codec { get; set; }
-        public List<Message> Messages { get; set; }
-    }
-
-    /// <summary>
+	/// <summary>
     /// Message represents the data from a single event occurance.
     /// </summary>
     public class Message
     {
-        private const int MinimumMessageSize = 12;
+        public const int MIN_MESSAGE_SIZE = 12;
         private static readonly Crc32 Crc32 = new Crc32();
 
         /// <summary>
@@ -45,7 +29,7 @@ namespace KafkaNet.Protocol
 		/// <summary>
         /// Attribute value outside message body used for added codec/compression info.
         /// </summary>
-        public byte Attribute { get; set; }
+        public byte Attributes { get; set; }
         
 		/// <summary>
         /// Key value used for routing message to partitions. Can be null.
@@ -58,54 +42,6 @@ namespace KafkaNet.Protocol
         public byte[] Value { get; set; }
 
         /// <summary>
-        /// Encodes a collection of messages into one byte[].  Encoded in order of list.
-        /// </summary>
-        /// <param name="messages">The collection of messages to encode together.</param>
-        /// <returns>Encoded byte[] representing the collection of messages.</returns>
-        public static byte[] EncodeMessageSet(IEnumerable<Message> messages)
-        {
-            var messageSet = new WriteByteStream();
-
-            foreach (var message in messages)
-            {
-                var encodedMessage = EncodeMessage(message);
-                messageSet.Pack(((long)0).ToBytes(), encodedMessage.Length.ToBytes(), encodedMessage);
-            }
-
-            return messageSet.Payload();
-        }
-
-        /// <summary>
-        /// Decode a byte[] that represents a collection of messages.
-        /// </summary>
-        /// <param name="messageSet">The byte[] encode as a message set from kafka.</param>
-        /// <returns>Enumerable representing stream of messages decoded from byte[]</returns>
-        public static IEnumerable<Message> DecodeMessageSet(byte[] messageSet)
-        {
-            var stream = new ReadByteStream(messageSet);
-
-
-            while (stream.HasData)
-            {
-                //if the message set hits against our max bytes wall on the fetch we will have a 1/2 completed message downloaded.
-                //the decode should guard against this situation
-                if (stream.Available(MinimumMessageSize) == false)
-                    yield break;
-
-                var offset = stream.ReadLong();
-                var messageSize = stream.ReadInt();
-
-                if (stream.Available(messageSize) == false)
-                    yield break;
-
-                foreach (var message in DecodeMessage(offset, stream.ReadBytesFromStream(messageSize)))
-                {
-                    yield return message;
-                }
-            }
-        }
-
-        /// <summary>
         /// Encodes a message object to byte[]
         /// </summary>
         /// <param name="message">Message data to encode.</param>
@@ -114,14 +50,14 @@ namespace KafkaNet.Protocol
         /// Format:
         /// Crc (Int32), MagicByte (Byte), Attribute (Byte), Key (Byte[]), Value (Byte[])
         /// </remarks>
-        public static byte[] EncodeMessage(Message message)
+        public byte[] Encode()
         {
             var body = new WriteByteStream();
 
-            body.Pack(new[] { message.MagicNumber },
-                      new[] { message.Attribute },
-                      (message.Key == null ? (-1).ToBytes() : message.Key.ToIntPrefixedBytes()),
-					  message.Value.ToIntPrefixedBytes());
+            body.Pack(new[] { this.MagicNumber },
+                      new[] { this.Attributes },
+					  this.Key.ToIntPrefixedBytes(),
+					  this.Value.ToIntPrefixedBytes());
 
             var crc = Crc32.ComputeHash(body.Payload());
             body.Prepend(crc);
@@ -136,7 +72,7 @@ namespace KafkaNet.Protocol
         /// <param name="payload">The byte[] encode as a message from kafka.</param>
         /// <returns>Enumerable representing stream of messages decoded from byte[].</returns>
         /// <remarks>The return type is an Enumerable as the message could be a compressed message set.</remarks>
-        public static IEnumerable<Message> DecodeMessage(long offset, byte[] payload)
+        public static IEnumerable<Message> Decode(long offset, byte[] payload)
         {
             var crc = payload.Take(4);
             var stream = new ReadByteStream(payload.Skip(4));
@@ -148,11 +84,11 @@ namespace KafkaNet.Protocol
             {
                 Meta = new MessageMetadata { Offset = offset },
                 MagicNumber = stream.ReadByte(),
-                Attribute = stream.ReadByte(),
+                Attributes = stream.ReadByte(),
                 Key = stream.ReadIntPrefixedBytes()
             };
 
-            var codec = (MessageCodec)(ProtocolConstants.AttributeCodeMask & message.Attribute);
+            var codec = (MessageCodec)(ProtocolConstants.AttributeCodeMask & message.Attributes);
             switch (codec)
             {
                 case MessageCodec.CodecNone:
@@ -161,7 +97,8 @@ namespace KafkaNet.Protocol
                     break;
                 case MessageCodec.CodecGzip:
                     var gZipData = stream.ReadIntPrefixedBytes();
-                    foreach (var m in DecodeMessageSet(Compression.Unzip(gZipData)))
+					var unzippedData = Compression.Unzip(gZipData);
+                    foreach (var m in MessageSet.Decode(unzippedData))
                     {
                         yield return m;
                     }

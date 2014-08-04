@@ -71,11 +71,11 @@ namespace KafkaNet
 			{
 				throw;
 			}
-			catch (ObjectDisposedException)
+			catch (ObjectDisposedException ode)
 			{
 				if (_disposeTokenSource.IsCancellationRequested)
 				{
-					throw new OperationCanceledException();
+					throw new ServerDisconnectedException(ode);
 				}
 				else
 				{
@@ -101,6 +101,7 @@ namespace KafkaNet
         {
 			try
 			{
+				_disposeTokenSource.Token.ThrowIfCancellationRequested();
 				EnsureConnected();
 				_disposeTokenSource.Token.ThrowIfCancellationRequested();
 				await _stream.WriteAsync(buffer, 0, buffer.Length);
@@ -109,11 +110,11 @@ namespace KafkaNet
 			//{
 			//	throw;
 			//}
-			catch (ObjectDisposedException)
+			catch (ObjectDisposedException ode)
 			{
 				if (_disposeTokenSource.IsCancellationRequested)
 				{
-					throw new OperationCanceledException();
+					throw new ServerDisconnectedException(ode);
 				}
 				else
 				{
@@ -157,16 +158,17 @@ namespace KafkaNet
 		{
 			lock (_clientLock)
 			{
-				if (_stream != null)
-				{
-					_stream.Dispose();
-					_stream = null;
-				}
-
 				if (_client != null)
 				{
 					_client.Close();
 					_client = null;
+				}
+
+				if (_stream != null)
+				{
+					_stream.Close();
+					_stream.Dispose();
+					_stream = null;
 				}
 			}
 		}

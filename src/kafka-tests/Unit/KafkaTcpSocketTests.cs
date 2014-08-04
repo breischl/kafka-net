@@ -51,7 +51,7 @@ namespace kafka_tests.Integration
 
 				test.Dispose();
 
-				Assert.Throws<OperationCanceledException>(async () =>
+				Assert.Throws<ServerDisconnectedException>(async () =>
 				{
 					await taskResult;
 				});
@@ -69,7 +69,7 @@ namespace kafka_tests.Integration
 
 				test.Dispose();
 
-				Assert.Throws<OperationCanceledException>(async () =>
+				Assert.Throws<ServerDisconnectedException>(async () =>
 				{
 					await taskResult;
 				});
@@ -151,7 +151,7 @@ namespace kafka_tests.Integration
                 const string secondMessage = "testmessage";
 
                 var payload = new WriteByteStream();
-                payload.Pack(firstMessage.ToBytes(), secondMessage.ToBytes());
+                payload.Pack(firstMessage.ToBytes(), secondMessage.ToUnsizedBytes());
 
 				using (var test = new KafkaTcpSocket(_fakeServerUrl))
 				{
@@ -241,7 +241,7 @@ namespace kafka_tests.Integration
                 var expectedLength = "test1".Length;
 
                 var payload = new WriteByteStream();
-                payload.Pack(messages.Select(x => x.ToBytes()).ToArray());
+                payload.Pack(messages.Select(x => x.ToUnsizedBytes()).ToArray());
 
                 var tasks = messages.Select(x => socket.ReadAsync(x.Length)).ToArray();
 

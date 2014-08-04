@@ -18,13 +18,13 @@ namespace kafka_tests.Unit
         {
             var testMessage = new Message
             {
-                Key = "test".ToBytes(),
-                Value = "kafka test message.".ToBytes()
+                Key = "test".ToUnsizedBytes(),
+                Value = "kafka test message.".ToUnsizedBytes()
             };
 
-            var encoded = Message.EncodeMessage(testMessage);
+            var encoded = testMessage.Encode();
             encoded[0] += 1;
-            var result = Message.DecodeMessage(0, encoded).First();
+            var result = Message.Decode(0, encoded).First();
         }
 
         [Test]
@@ -32,20 +32,46 @@ namespace kafka_tests.Unit
 		[TestCase(null, "test message")]
 		[TestCase("test key", null)]
 		[TestCase(null, null)]
-        public void EnsureMessageEncodeAndDecodeAreCompatible(string key, string value)
+        public void Message_EncodeAndDecode(string key, string value)
         {
             var testMessage = new Message
                 {
-                    Key = key.ToBytes(),
-					Value = (value == null ? new byte[0] : value.ToBytes())
+                    Key = key.ToUnsizedBytes(),
+					Value = (value == null ? null : value.ToUnsizedBytes())
                 };
 
-            var encoded = Message.EncodeMessage(testMessage);
-            var result = Message.DecodeMessage(0, encoded).First();
+            var encoded = testMessage.Encode();
+            var result = Message.Decode(0, encoded).First();
 
             Assert.That(result.Key, Is.EqualTo(testMessage.Key));
             Assert.That(result.Value, Is.EqualTo(testMessage.Value));
         }
+
+		[Test]
+		[TestCase(MessageCodec.CodecNone)]
+		[TestCase(MessageCodec.CodecGzip)]
+		public void MessageSet_EncodeAndDecode(MessageCodec codec)
+		{
+			var msgSet = new MessageSet()
+			{
+				Messages = new[]
+                {
+                    new Message {Value = 0.ToBytes(), Key = 0.ToBytes()},
+                    new Message {Value = 1.ToBytes(), Key = 1.ToBytes()},
+                    new Message {Value = 2.ToBytes(), Key = 2.ToBytes()}
+                }
+			};
+
+
+			var encoded = msgSet.Encode(codec);
+			var results = MessageSet.Decode(encoded).ToArray();
+
+			for (int i = 0; i < msgSet.Messages.Count; i++)
+			{
+				Assert.That(results[i].Key, Is.EqualTo(i.ToBytes()));
+				Assert.That(results[i].Value, Is.EqualTo(i.ToBytes()));
+			}
+		}
 
         [Test]
         public void EncodeMessageSetEncodesMultipleMessages()
@@ -60,21 +86,25 @@ namespace kafka_tests.Unit
 
             var messages = new[]
                 {
-                    new Message {Value = "0".ToBytes(), Key = "1".ToBytes()},
-                    new Message {Value = "1".ToBytes(), Key = "1".ToBytes()},
-                    new Message {Value = "2".ToBytes(), Key = "1".ToBytes()}
+                    new Message {Value = "0".ToUnsizedBytes(), Key = "1".ToUnsizedBytes()},
+                    new Message {Value = "1".ToUnsizedBytes(), Key = "1".ToUnsizedBytes()},
+                    new Message {Value = "2".ToUnsizedBytes(), Key = "1".ToUnsizedBytes()}
                 };
 
-            var result = Message.EncodeMessageSet(messages);
+			var messageSet = new MessageSet()
+			{
+				Messages = messages
+			};
+			var result = messageSet.Encode();
 
-            Assert.That(expected, Is.EqualTo(result));
+			Assert.That(result, Is.EqualTo(expected));
         }
 
         [Test]
         public void DecodeMessageSetShouldHandleResponseWithMaxBufferSizeHit()
         {
             //This message set has a truncated message bytes at the end of it
-            var result = Message.DecodeMessageSet(MessageHelper.FetchResponseMaxBytesOverflow).ToList();
+            var result = MessageSet.Decode(MessageHelper.FetchResponseMaxBytesOverflow).ToList();
             
             Assert.That(result.Count, Is.EqualTo(529));
         }

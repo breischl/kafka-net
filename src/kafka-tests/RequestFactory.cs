@@ -6,13 +6,13 @@ namespace kafka_tests
 {
     public static class RequestFactory
     {
-        public static ProduceRequest CreateProduceRequest(string topic, string message, string key = null)
+		internal static ProduceRequest CreateProduceRequest(string topic, string message)
         {
             return new ProduceRequest
                 {
-                    Payload = new List<Payload>(new[]
+                    MessageSets = new List<AnnotatedMessageSet>(new[]
                         {
-                            new Payload
+                            new AnnotatedMessageSet
                                 {
                                     Topic = topic,
                                     Messages = new List<Message>(new[] {new Message {Value = Encoding.UTF8.GetBytes(message)}})

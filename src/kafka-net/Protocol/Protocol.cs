@@ -5,36 +5,33 @@ using System.Text;
 
 namespace KafkaNet.Protocol
 {
-    public static class Compression
-    {
-        public static byte[] Zip(byte[] bytes)
-        {
-            using (var source = new MemoryStream(bytes))
-            using (var destination = new MemoryStream())
-            {
-                using (var gzip = new GZipStream(destination, CompressionMode.Compress, false))
-                {
-                    source.CopyTo(gzip);
-                }
+	public static class Compression
+	{
+		public static byte[] Zip(byte[] bytes)
+		{
+			using (var destination = new MemoryStream())
+			using (var gzip = new GZipStream(destination, CompressionMode.Compress, true))
+			{
+				gzip.Write(bytes, 0, bytes.Length);
+				gzip.Flush();
+				gzip.Close();
+				return destination.ToArray();
+			}
+		}
 
-                return destination.ToArray();
-            }
-        }
-
-        public static byte[] Unzip(byte[] bytes)
-        {
-            using (var source = new MemoryStream(bytes))
-            using (var destination = new MemoryStream())
-            {
-                using (var gzip = new GZipStream(source, CompressionMode.Decompress, false))
-                {
-                    gzip.CopyTo(destination);
-                }
-
-                return destination.ToArray();
-            }
-        }
-    }
+		public static byte[] Unzip(byte[] bytes)
+		{
+			using (var source = new MemoryStream(bytes))
+			using (var destination = new MemoryStream())
+			using (var gzip = new GZipStream(source, CompressionMode.Decompress, true))
+			{
+				gzip.CopyTo(destination);
+				gzip.Flush();
+				gzip.Close();
+				return destination.ToArray();
+			}
+		}
+	}
 
     public enum ApiKeyRequestType
     {
@@ -80,40 +77,46 @@ namespace KafkaNet.Protocol
     }
 
     #region Exceptions...
-    public class FailCrcCheckException : Exception
+	public class FailCrcCheckException : ApplicationException
     {
         public FailCrcCheckException(string message) : base(message) { }
     }
 
-    public class ResponseTimeoutException : Exception
+	public class ResponseTimeoutException : ApplicationException
     {
         public ResponseTimeoutException(string message) : base(message) { }
     }
 
-    public class InvalidPartitionException : Exception
+	public class InvalidPartitionException : ApplicationException
     {
         public InvalidPartitionException(string message) : base(message) { }
     }
 
-    public class ServerDisconnectedException : Exception
+    public class ServerDisconnectedException : ApplicationException
     {
         public ServerDisconnectedException(string message) : base(message) { }
+		public ServerDisconnectedException() : base() { }
+		public ServerDisconnectedException(Exception ex) : base("The server was disconnected", ex) { }
     }
 
-    public class ServerUnreachableException : Exception
+	public class ServerUnreachableException : ApplicationException
     {
         public ServerUnreachableException(string message) : base(message) { }
     }
 
-    public class InvalidTopicMetadataException : Exception
+	public class InvalidTopicMetadataException : ApplicationException
     {
         public InvalidTopicMetadataException(string message) : base(message) { }
     }
 
-    public class LeaderNotFoundException : Exception
+	public class LeaderNotFoundException : ApplicationException
     {
         public LeaderNotFoundException(string message) : base(message) { }
     }
+
+	public class UnsupportedCompressionMethodException : ApplicationException{
+		public UnsupportedCompressionMethodException() : base(){}
+	}
     #endregion
 
 

@@ -69,10 +69,5 @@ namespace KafkaNet
 
             return response.First();
         }
-
-        public void Dispose()
-        {
-            using (_brokerRouter) { }
-        }
     }
 }

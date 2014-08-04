@@ -183,7 +183,7 @@ namespace kafka_tests.Unit
         [TestCase("withkey")]
         public void SelectPartitionShouldUsePartitionSelector(string key)
         {
-			var keyBytes = key.ToBytes();
+			var keyBytes = key.ToUnsizedBytes();
 
             var routerProxy = new BrokerRouterProxy(_kernel);
 

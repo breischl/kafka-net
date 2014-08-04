@@ -63,6 +63,9 @@
     <Compile Include="Default\DefaultPartitionSelector.cs" />
     <Compile Include="Interfaces\IPartitionSelector.cs" />
     <Compile Include="BrokerRouter.cs" />
+    <Compile Include="Model\KafkaErrorCode.cs" />
+    <Compile Include="Model\ProduceResult.cs" />
+    <Compile Include="Model\ProducerOptions.cs" />
     <Compile Include="Protocol\Broker.cs" />
     <Compile Include="Common\ReadByteStream.cs" />
     <Compile Include="Common\Crc32.cs" />
@@ -73,7 +76,10 @@
     <Compile Include="Common\Extensions.cs" />
     <Compile Include="Model\KafkaOptions.cs" />
     <Compile Include="Protocol\ConsumerMetadataRequest.cs" />
+    <Compile Include="Protocol\FetchResponse.cs" />
+    <Compile Include="Protocol\MessageSet.cs" />
     <Compile Include="Protocol\OffsetFetchRequest.cs" />
+    <Compile Include="Protocol\ProduceResponse.cs" />
     <Compile Include="Protocol\Protocol.cs" />
     <Compile Include="Protocol\BaseRequest.cs" />
     <Compile Include="Interfaces\IKafkaRequest.cs" />
@@ -91,9 +97,7 @@
     <None Include="kafka-net.nuspec" />
     <None Include="packages.config" />
   </ItemGroup>
-  <ItemGroup>
-    <Folder Include="lib\net45\" />
-  </ItemGroup>
+  <ItemGroup />
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <Import Project="$(SolutionDir)\.nuget\NuGet.targets" Condition="Exists('$(SolutionDir)\.nuget\NuGet.targets')" />
   <Target Name="EnsureNuGetPackageBuildImports" BeforeTargets="PrepareForBuild">

@@ -32,6 +32,19 @@ namespace kafka_tests.Fakes
             get { return _address; }
         }
 
+		public bool IsOpen
+		{
+			get { return true; }
+		}
+
+		public int ConnectionId
+		{
+			get
+			{
+				return 1;
+			}
+		}
+
         public bool ReadPolling
         {
             get { return true; }
