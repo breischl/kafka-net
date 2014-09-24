@@ -7,7 +7,7 @@ namespace kafka_tests
     /// <summary>
     /// The initial state of the ThreadWall when the class is constructed.
     /// </summary>
-    public enum ThreadWallInitialState { Blocked, UnBlocked }
+    public enum ThreadWallState { Blocked, UnBlocked }
 
     /// <summary>
     /// Provides a non-exclusive lock on a section of code.  The idea here is to allow one thread to inform all other
@@ -22,18 +22,29 @@ namespace kafka_tests
     {
         private readonly SemaphoreSlim _semaphore = new SemaphoreSlim(1, 1);
 
-        public ThreadWall(ThreadWallInitialState state)
+        public ThreadWall(ThreadWallState state)
         {
             switch (state)
             {
-                case ThreadWallInitialState.Blocked:
+                case ThreadWallState.Blocked:
                     _semaphore = new SemaphoreSlim(0, 1);
                     break;
-                case ThreadWallInitialState.UnBlocked:
+                case ThreadWallState.UnBlocked:
                     _semaphore = new SemaphoreSlim(1, 1);
                     break;
                 default:
-                    throw new NotSupportedException("Unsupported ThreadWallInitialState supplied.");
+                    throw new NotSupportedException("Unsupported ThreadWallState supplied.");
+            }
+        }
+
+        /// <summary>
+        /// Indicates the current thread wall state and whether it will allow threads through or not.
+        /// </summary>
+        public ThreadWallState WallState
+        {
+            get
+            {
+                return _semaphore.CurrentCount == 0 ? ThreadWallState.Blocked : ThreadWallState.UnBlocked;
             }
         }
 

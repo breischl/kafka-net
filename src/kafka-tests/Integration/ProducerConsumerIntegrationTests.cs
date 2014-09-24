@@ -25,7 +25,8 @@ namespace kafka_tests.Integration
 		public void FixtureSetup()
 		{
 			//ensure topic exists
-			using (var conn = new KafkaConnection(new KafkaTcpSocket(_options.KafkaServerUri.First()), _options.ResponseTimeoutMs))
+			var endpoint = (new DefaultKafkaConnectionFactory()).Resolve(_options.KafkaServerUri.First());
+			using (var conn = new KafkaConnection(new KafkaTcpSocket(endpoint), _options.ResponseTimeoutMs))
 			{
 				var t1 = conn.SendAsync(new MetadataRequest { Topics = new List<string>(new[] { IntegrationConfig.IntegrationCompressionTopic }) });
 				var t2 = conn.SendAsync(new MetadataRequest { Topics = new List<string>(new[] { IntegrationConfig.IntegrationTopic }) });

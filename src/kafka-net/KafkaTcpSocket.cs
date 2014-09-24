@@ -7,6 +7,7 @@ using System.Threading;
 using KafkaNet.Common;
 using KafkaNet.Protocol;
 using Common.Logging;
+using KafkaNet.Model;
 
 namespace KafkaNet
 {
@@ -18,7 +19,7 @@ namespace KafkaNet
     {
         private readonly CancellationTokenSource _disposeTokenSource = new CancellationTokenSource();
 		private static readonly ILog _log = LogManager.GetLogger<KafkaTcpSocket>();
-        private readonly Uri _serverUri;
+        private readonly KafkaEndpoint _endpoint;
 
 		private readonly object _clientLock = new object();
         private TcpClient _client;
@@ -30,24 +31,38 @@ namespace KafkaNet
         /// <param name="log">Logging facility for verbose messaging of actions.</param>
         /// <param name="serverUri">The server to connect to.</param>
         /// <param name="delayConnectAttemptMS">Time in milliseconds to delay the initial connection attempt to the given server.</param>
-		public KafkaTcpSocket(Uri serverUri)
+		public KafkaTcpSocket(KafkaEndpoint endpoint)
         {
-            _serverUri = serverUri;
+			_endpoint = endpoint;
         }
 
         /// <summary>
         /// The Uri to the connected server.
         /// </summary>
-		public Uri ServerUri { get { return _serverUri; } }
+		public Uri ServerUri { get { return _endpoint.ServerUri; } }
+
+		public KafkaEndpoint Endpoint { get { return _endpoint; } }
 
         /// <summary>
         /// Read a certain byte array size return only when all bytes received.
         /// </summary>
         /// <param name="readSize">The size in bytes to receive from server.</param>
-        /// <param name="cancellationToken">A cancellation token which will cancel the request.</param>
         /// <returns>Returns a byte[] array with the size of readSize.</returns>
-		public async Task<byte[]> ReadAsync(int readSize)
+		public Task<byte[]> ReadAsync(int readSize)
 		{
+			return ReadAsync(readSize, CancellationToken.None);
+		}
+
+		/// <summary>
+		/// Read a certain byte array size return only when all bytes received.
+		/// </summary>
+		/// <param name="readSize">The size in bytes to receive from server.</param>
+		/// <param name="cancelToken">A cancellation token which will cancel the request.</param>
+		/// <returns>Returns a byte[] array with the size of readSize.</returns>
+		public async Task<byte[]> ReadAsync(int readSize, CancellationToken cancelToken)
+		{
+			var _myCancelSource = CancellationTokenSource.CreateLinkedTokenSource(_disposeTokenSource.Token, cancelToken);
+
 			try
 			{
 				EnsureConnected();
@@ -55,13 +70,13 @@ namespace KafkaNet
 				var readBuffer = new byte[readSize];
 				while (bytesRead < readSize)
 				{
-					_disposeTokenSource.Token.ThrowIfCancellationRequested();
-					var bytesReceived = await _stream.ReadAsync(readBuffer, bytesRead, readSize - bytesRead);
+					_myCancelSource.Token.ThrowIfCancellationRequested();
+					var bytesReceived = await _stream.ReadAsync(readBuffer, bytesRead, readSize - bytesRead, _myCancelSource.Token);
 					bytesRead += bytesReceived;
 
 					if (bytesRead == 0)
 					{
-						throw new ServerDisconnectedException("Server " + _serverUri + " disconnected");
+						throw new ServerDisconnectedException("Server " + ServerUri.AbsoluteUri + " disconnected in read loop");
 					}
 				}
 
@@ -75,7 +90,7 @@ namespace KafkaNet
 			{
 				if (_disposeTokenSource.IsCancellationRequested)
 				{
-					throw new ServerDisconnectedException(ode);
+					throw new ServerDisconnectedException("Server" + ServerUri.AbsoluteUri + " disconnected during read", ode);
 				}
 				else
 				{
@@ -89,22 +104,32 @@ namespace KafkaNet
 			}
 		}
 
+		        /// <summary>
+        /// Write the buffer data to the server.
+        /// </summary>
+        /// <param name="buffer">The buffer data to send.</param>
+        /// <returns>Returns Task handle to the write operation.</returns>
+		public Task WriteAsync(byte[] buffer)
+		{
+			return WriteAsync(buffer, CancellationToken.None);
+		}
+
         /// <summary>
         /// Write the buffer data to the server.
         /// </summary>
         /// <param name="buffer">The buffer data to send.</param>
-        /// <param name="offset">The offset to start the read from the buffer.</param>
-        /// <param name="count">The length of data to read off the buffer.</param>
-        /// <param name="cancellationToken">A cancellation token which will cancel the request.</param>
+		/// <param name="cancelToken">A cancellation token which will cancel the request.</param>
         /// <returns>Returns Task handle to the write operation.</returns>
-        public async Task WriteAsync(byte[] buffer)
+        public async Task WriteAsync(byte[] buffer, CancellationToken cancelToken)
         {
+			var _myCancelSource = CancellationTokenSource.CreateLinkedTokenSource(_disposeTokenSource.Token, cancelToken);
+
 			try
 			{
-				_disposeTokenSource.Token.ThrowIfCancellationRequested();
+				_myCancelSource.Token.ThrowIfCancellationRequested();
 				EnsureConnected();
-				_disposeTokenSource.Token.ThrowIfCancellationRequested();
-				await _stream.WriteAsync(buffer, 0, buffer.Length);
+				_myCancelSource.Token.ThrowIfCancellationRequested();
+				await _stream.WriteAsync(buffer, 0, buffer.Length, _myCancelSource.Token);
 			}
 			//catch (OperationCanceledException)
 			//{
@@ -114,7 +139,7 @@ namespace KafkaNet
 			{
 				if (_disposeTokenSource.IsCancellationRequested)
 				{
-					throw new ServerDisconnectedException(ode);
+					throw new ServerDisconnectedException("Server" + ServerUri.AbsoluteUri + " disconnected during write", ode);
 				}
 				else
 				{
@@ -139,12 +164,12 @@ namespace KafkaNet
 			{
 				if (_client == null)
 				{
-					_client = new TcpClient(_serverUri.Host, _serverUri.Port);
+					_client = new TcpClient(ServerUri.Host, ServerUri.Port);
 				}
 
 				if (!_client.Connected)
 				{
-					_client.Connect(_serverUri.Host, _serverUri.Port);
+					_client.Connect(ServerUri.Host, ServerUri.Port);
 				}
 
 				if (_stream == null)

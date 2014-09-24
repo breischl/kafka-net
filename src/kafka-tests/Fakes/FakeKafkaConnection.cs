@@ -1,4 +1,6 @@
-﻿using KafkaNet;
+﻿using System.Net;
+using KafkaNet;
+using KafkaNet.Model;
 using KafkaNet.Protocol;
 using System;
 using System.Collections.Generic;
@@ -10,8 +12,6 @@ namespace kafka_tests.Fakes
 {
     public class FakeKafkaConnection : IKafkaConnection
     {
-        private Uri _address;
-
         public Func<ProduceResponse> ProduceResponseFunction;
         public Func<MetadataResponse> MetadataResponseFunction;
         public Func<OffsetResponse> OffsetResponseFunction;
@@ -19,7 +19,7 @@ namespace kafka_tests.Fakes
 
         public FakeKafkaConnection(Uri address)
         {
-            _address = address;
+            Endpoint = new DefaultKafkaConnectionFactory().Resolve(address);
         }
 
         public int MetadataRequestCallCount { get; set; }
@@ -27,23 +27,7 @@ namespace kafka_tests.Fakes
         public int OffsetRequestCallCount { get; set; }
         public int FetchRequestCallCount { get; set; }
 
-        public Uri KafkaUri
-        {
-            get { return _address; }
-        }
-
-		public bool IsOpen
-		{
-			get { return true; }
-		}
-
-		public int ConnectionId
-		{
-			get
-			{
-				return 1;
-			}
-		}
+        public KafkaEndpoint Endpoint { get; private set; }
 
         public bool ReadPolling
         {
@@ -58,7 +42,7 @@ namespace kafka_tests.Fakes
         public Task<List<T>> SendAsync<T>(IKafkaRequest<T> request)
         {
             //start a thread to handle the request and return
-            var task = new Task<List<T>>(() =>
+            return Task.Run(() =>
             {
                 if (typeof(T) == typeof(ProduceResponse))
                 {
@@ -83,9 +67,6 @@ namespace kafka_tests.Fakes
 
                 return null;
             });
-
-            task.Start();
-            return task;
         }
 
         public void Dispose()

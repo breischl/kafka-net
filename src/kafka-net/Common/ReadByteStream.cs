@@ -61,7 +61,7 @@ namespace KafkaNet.Common
 
         public string ReadString(int size)
         {
-            return Encoding.Default.GetString(ReadBytesFromStream(size));
+            return Encoding.UTF8.GetString(ReadBytesFromStream(size));
         }
 
         public string ReadInt16String()
@@ -105,16 +105,16 @@ namespace KafkaNet.Common
             return buffer;
         }
 
-        public byte[] ReadBytesFromStream(int size)
-        {
+		public byte[] ReadBytesFromStream(int size)
+		{
 			if (size <= 0)
 			{
 				return new byte[0];
 			}
 
 			var buffer = new byte[size];
-            _stream.Read(buffer, 0, size);
-            return buffer;
-        }
+			_stream.Read(buffer, 0, size);
+			return buffer;
+		}
     }
 }

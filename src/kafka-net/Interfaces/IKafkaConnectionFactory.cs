@@ -1,13 +1,12 @@
-﻿using KafkaNet.Protocol;
+﻿using KafkaNet.Model;
 using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
 
 namespace KafkaNet
 {
     public interface IKafkaConnectionFactory
     {
-        IKafkaConnection Create(Uri kafkaAddress, int responseTimeoutMs);
+        IKafkaConnection Create(KafkaEndpoint endpoint, int responseTimeoutMs);
+		IKafkaConnection Create(Uri kafkaAddress, int responseTimeoutMs);
+        KafkaEndpoint Resolve(Uri kafkaAddress);
     }
 }

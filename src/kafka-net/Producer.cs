@@ -120,7 +120,7 @@ namespace KafkaNet
 											.GroupBy(msg => _opts.Router.SelectBrokerRoute(sendRequest.Topic, msg.Key))
 											.ToList();
 				var routedMessages = routedMessageGroups.Select(grp => new RoutedMessages{ Route = grp.Key, SendRequest = sendRequest, Messages = grp.ToList() });
-				var serverGroups = routedMessages.GroupBy(rg => rg.Route.Connection.KafkaUri);
+				var serverGroups = routedMessages.GroupBy(rg => rg.Route.Connection.Endpoint.ServerUri);
 
 				foreach (var serverGroup in serverGroups)
 				{

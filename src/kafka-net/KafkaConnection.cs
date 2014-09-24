@@ -4,9 +4,10 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using KafkaNet.Common;
-using KafkaNet.Protocol;
 using Common.Logging;
+using KafkaNet.Common;
+using KafkaNet.Model;
+using KafkaNet.Protocol;
 
 namespace KafkaNet
 {
@@ -22,17 +23,18 @@ namespace KafkaNet
     public class KafkaConnection : IKafkaConnection
     {
         private const int DefaultResponseTimeoutMs = 30000;
-		private static int NextConnectionId = 0;
-
+		private static readonly ILog _log = LogManager.GetLogger<KafkaConnection>();
         private readonly ConcurrentDictionary<int, AsyncRequestItem> _requestIndex = new ConcurrentDictionary<int, AsyncRequestItem>();
         private readonly IScheduledTimer _responseTimeoutTimer;
         private readonly int _responseTimeoutMS;
-		private readonly ILog _log = LogManager.GetLogger<KafkaConnection>();
         private readonly IKafkaTcpSocket _client;
         private readonly CancellationTokenSource _disposeToken = new CancellationTokenSource();
-		private readonly BlockingCollection<byte[]> _sendQueue = new BlockingCollection<byte[]>(new ConcurrentQueue<byte[]>());
+		private readonly object _timeoutLockObj = new object();
+
+        private int _disposeCount = 0;
+        private Task _connectionReadPollingTask = null;
+        private int _ensureOneActiveReader;
         private int _correlationIdSeed;
-		public readonly int _connectionId;
 
         /// <summary>
         /// Initializes a new instance of the KafkaConnection class.
@@ -42,44 +44,41 @@ namespace KafkaNet
         /// <param name="responseTimeoutMs">The amount of time to wait for a message response to be received after sending message to Kafka.</param>
         public KafkaConnection(IKafkaTcpSocket client, int responseTimeoutMs = DefaultResponseTimeoutMs)
         {
-			_client = client;
+            _client = client;
             _responseTimeoutMS = responseTimeoutMs;
             _responseTimeoutTimer = new ScheduledTimer()
                 .Do(ResponseTimeoutCheck)
                 .Every(TimeSpan.FromMilliseconds(100))
                 .StartingAt(DateTime.Now.AddMilliseconds(_responseTimeoutMS))
                 .Begin();
-			_connectionId = Interlocked.Increment(ref NextConnectionId);
-
-
-			StartReceiveProc();
-			StartSendProc();
+			
+            StartReadStreamPoller();
         }
-
-		public bool IsOpen
-		{
-			get
-			{
-				return !_disposeToken.IsCancellationRequested;
-			}
-		}
-
-		public int ConnectionId
-		{
-			get
-			{
-				return _connectionId;
-			}
-		}
 
         /// <summary>
-        /// Uri connection to kafka server.
+        /// Indicates a thread is polling the stream for data to read.
         /// </summary>
-        public Uri KafkaUri
+        public bool ReadPolling
         {
-            get { return _client.ServerUri; }
+            get { return _ensureOneActiveReader >= 1; }
         }
-		
+
+        /// <summary>
+        /// Provides the unique ip/port endpoint for this connection
+        /// </summary>
+        public KafkaEndpoint Endpoint { get { return _client.Endpoint; } }
+        
+        /// <summary>
+        /// Send raw byte[] payload to the kafka server with a task indicating upload is complete.
+        /// </summary>
+        /// <param name="payload">kafka protocol formatted byte[] payload</param>
+        /// <returns>Task which signals the completion of the upload of data to the server.</returns>
+        public Task SendAsync(byte[] payload)
+        {
+            return _client.WriteAsync(payload);
+        }
+
+
         /// <summary>
         /// Send kafka payload to server and receive a task event when response is received.
         /// </summary>
@@ -88,118 +87,84 @@ namespace KafkaNet
         /// <returns></returns>
         public async Task<List<T>> SendAsync<T>(IKafkaRequest<T> request)
         {
-			if (_disposeToken.Token.IsCancellationRequested)
-			{
-				throw new ObjectDisposedException("KafkaConnection");
-			}
-
             //assign unique correlationId
             request.CorrelationId = NextCorrelationId();
 
             var asyncRequest = new AsyncRequestItem(request.CorrelationId);
 
-			if (_requestIndex.TryAdd(request.CorrelationId, asyncRequest) == false)
-			{
-				throw new ApplicationException("Failed to register request for async response.");
-			}
+            if (_requestIndex.TryAdd(request.CorrelationId, asyncRequest) == false)
+                throw new ApplicationException("Failed to register request for async response.");
 
-			var encodedRequest = request.Encode();
-			_sendQueue.Add(encodedRequest);
+            await SendAsync(request.Encode());
 
             var response = await asyncRequest.ReceiveTask.Task;
 
             return request.Decode(response).ToList();
         }
-		
-		private void StartSendProc()
-		{
-			Task.Run(async delegate
-			{
-				try
-				{
-					var enumerator = _sendQueue.GetConsumingEnumerable(_disposeToken.Token);
-					foreach (var payload in enumerator)
-					{
-						bool sent = false;
 
-						while (!sent)
-						{
-							try
-							{
-								await _client.WriteAsync(payload);
-								sent = true;
-							}
-							catch (ServerDisconnectedException ex)
-							{
-								if (_disposeToken.Token.IsCancellationRequested)
-								{
-									_log.DebugFormat("KafkaConnection cancellation requested, exiting");
-									return;
-								}
-								else
-								{
-									_log.WarnFormat("Caught unexpected ServerDisconnectedException in connection {0} to server {1}", ex, _connectionId, _client.ServerUri);
-								}
-							}
-							catch (Exception ex)
-							{
-								_log.ErrorFormat("Error sending to server {0} in connection {1}", ex, _client.ServerUri, _connectionId);
-								Thread.Sleep(100);
-							}
-						}
-					}
-				}
-				finally
-				{
-					_log.TraceFormat("Exiting send loop for connection {0} to server {1}", _connectionId, _client.ServerUri);
-					_disposeToken.Cancel(); //if the loop crashed, close the whole connection
-				}
-			});
-		}
+        #region Equals Override...
+        public override bool Equals(object obj)
+        {
+            if (ReferenceEquals(null, obj)) return false;
+            if (ReferenceEquals(this, obj)) return true;
+            if (obj.GetType() != this.GetType()) return false;
+            return Equals((KafkaConnection)obj);
+        }
 
-		private void StartReceiveProc()
-		{
-			Task.Run(async delegate
-			{
-				try
-				{
-					//This thread will poll the receive stream for data, parse a message out
-					//and trigger an event with the message payload
-					while (_disposeToken.Token.IsCancellationRequested == false)
-					{
-						try
-						{
-							_log.TraceFormat("Connection {0} awaiting message from {1}", _connectionId, KafkaUri);
-							var messageSize = (await _client.ReadAsync(4)).ToInt32();
+        protected bool Equals(KafkaConnection other)
+        {
+            return Equals(_client.Endpoint, other.Endpoint);
+        }
 
-							_log.TraceFormat("Connection {0} received message of size {1} from {2}", _connectionId, messageSize, KafkaUri);
-							var message = await _client.ReadAsync(messageSize);
+        public override int GetHashCode()
+        {
+            return (_client.Endpoint != null ? _client.Endpoint.GetHashCode() : 0);
+        }
+        #endregion
 
-							CorrelatePayloadToRequest(message);
-						}
-						catch (ServerDisconnectedException ex)
-						{
-							_log.DebugFormat("Connection {0} to server {1} canceled", _connectionId, _client.ServerUri);
-							SetOutstandingRequestFault(ex);
-						}
-						catch (ObjectDisposedException ode)
-						{
-							throw new OperationCanceledException("Object is being disposed", ode);
-						}
-						catch (Exception ex)
-						{
-							_log.ErrorFormat("Exception occured in polling read thread in connection {0} for server {1}", ex, _connectionId, _client.ServerUri);
-							SetOutstandingRequestFault(ex);
-						}
-					}
-				}
-				finally
-				{
-					_log.TraceFormat("Exiting receive loop for connection {0} to server {1}", _connectionId, _client.ServerUri);
-					_disposeToken.Cancel(); //if the loop crashed, close the connection
-				}
-			});
-		}
+        private void StartReadStreamPoller()
+        {
+            //This thread will poll the receive stream for data, parce a message out
+            //and trigger an event with the message payload
+            _connectionReadPollingTask = Task.Factory.StartNew(async () =>
+                {
+                    try
+                    {
+                        //only allow one reader to execute, dump out all other requests
+                        if (Interlocked.Increment(ref _ensureOneActiveReader) != 1) return;
+                        
+                        while (_disposeToken.IsCancellationRequested == false)
+                        {
+                            try
+                            {
+                                _log.DebugFormat("Awaiting message from: {0}", _client.Endpoint);
+                                var messageSizeResult = await _client.ReadAsync(4, _disposeToken.Token);
+                                var messageSize = messageSizeResult.ToInt32();
+
+                                _log.DebugFormat("Received message of size: {0} From: {1}", messageSize, _client.Endpoint);
+                                var message = await _client.ReadAsync(messageSize, _disposeToken.Token);
+
+                                CorrelatePayloadToRequest(message);
+                            }
+                            catch (Exception ex)
+                            { 
+                                //don't record the exception if we are disposing
+                                if (_disposeToken.IsCancellationRequested == false)
+                                {
+                                    //TODO being in sync with the byte order on read is important.  What happens if this exception causes us to be out of sync?
+                                    //record exception and continue to scan for data.
+                                    _log.ErrorFormat("Exception occured in polling read thread.  Exception={0}", ex);
+                                }
+                            }
+                        }
+                    }
+                    finally
+                    {
+                        Interlocked.Decrement(ref _ensureOneActiveReader);
+                        _log.DebugFormat("Closed down connection to: {0}", _client.Endpoint);
+                    }   
+                }, TaskCreationOptions.LongRunning);
+        }
 
         private void CorrelatePayloadToRequest(byte[] payload)
         {
@@ -218,9 +183,9 @@ namespace KafkaNet
         private int NextCorrelationId()
         {
             var id = Interlocked.Increment(ref _correlationIdSeed);
-            if (id > int.MaxValue - 1000) //somewhere close to max reset.
+            if (id > int.MaxValue - 100) //somewhere close to max reset.
             {
-				Interlocked.Exchange(ref _correlationIdSeed, 0);
+                Interlocked.Exchange(ref _correlationIdSeed, 0);
             }
             return id;
         }
@@ -230,72 +195,53 @@ namespace KafkaNet
         /// </summary>
 		private void ResponseTimeoutCheck()
 		{
-			lock (_responseTimeoutTimer)
+			lock (_timeoutLockObj)
 			{
-				if (_disposeToken.Token.IsCancellationRequested)
-				{
-					foreach (var request in _requestIndex.Values)
-					{
-						request.ReceiveTask.SetCanceled();
-					}
-					_requestIndex.Clear();
-				}
-				else
-				{
-					var timeouts = _requestIndex.Values.Where(x => x.CreatedOnUtc.AddMilliseconds(_responseTimeoutMS) < DateTime.UtcNow).ToList();
+				var timeouts = _requestIndex.Values.Where(x =>
+					x.CreatedOnUtc.AddMilliseconds(_responseTimeoutMS) < DateTime.UtcNow || _disposeToken.IsCancellationRequested).ToList();
 
-					foreach (var timeout in timeouts)
+				foreach (var timeout in timeouts)
+				{
+					AsyncRequestItem request;
+					if (_requestIndex.TryRemove(timeout.CorrelationId, out request))
 					{
-						AsyncRequestItem request;
-						if (_requestIndex.TryRemove(timeout.CorrelationId, out request))
+						if (_disposeToken.IsCancellationRequested)
 						{
-							request.ReceiveTask.TrySetException(new ResponseTimeoutException("Timeout Expired. Client failed to receive a response from server after waiting " + DefaultResponseTimeoutMs + "ms."));
+							request.ReceiveTask.TrySetException(new ObjectDisposedException("The object is being disposed and the connection is closing."));
+						}
+						else
+						{
+							request.ReceiveTask.TrySetException(new ResponseTimeoutException(
+								string.Format("Timeout Expired. Client failed to receive a response from server after waiting {0}ms.", _responseTimeoutMS)));
 						}
 					}
 				}
 			}
 		}
 
-		#region Equals Override...
-		public override bool Equals(object obj)
-		{
-			if (ReferenceEquals(null, obj)) return false;
-			if (ReferenceEquals(this, obj)) return true;
-			if (obj.GetType() != this.GetType()) return false;
-			return Equals((KafkaConnection)obj);
-		}
+        public void Dispose()
+        {
+            //skip multiple calls to dispose
+            if (Interlocked.Increment(ref _disposeCount) != 1) return; 
+            
+            _responseTimeoutTimer.End();
+            
+            _disposeToken.Cancel();
 
-		protected bool Equals(KafkaConnection other)
-		{
-			return Equals(KafkaUri, other.KafkaUri);
-		}
+            if (_connectionReadPollingTask != null) _connectionReadPollingTask.Wait(TimeSpan.FromSeconds(1));
+            
+            using(_disposeToken)
+            {
+                ResponseTimeoutCheck();
+            }
 
-		public override int GetHashCode()
-		{
-			return (KafkaUri != null ? KafkaUri.GetHashCode() : 0);
-		}
-		#endregion
+            using (_client)
+            using (_responseTimeoutTimer)
+            {
+            }
+        }
 
-		private void SetOutstandingRequestFault(Exception ex)
-		{
-			var failedRequests = _requestIndex.Values;
-			_requestIndex.Clear();
-
-			foreach (var request in failedRequests)
-			{
-				request.ReceiveTask.SetException(ex);
-			}
-		}
-
-		public void Dispose()
-		{
-			_log.DebugFormat("Disposing connection {0} to server {1}", _connectionId, _client.ServerUri);
-			_client.Dispose();
-			_responseTimeoutTimer.Dispose();
-			_disposeToken.Cancel();
-			ResponseTimeoutCheck();
-		}
-
+        #region Class AsyncRequestItem...
         class AsyncRequestItem
         {
             public AsyncRequestItem(int correlationId)
@@ -307,8 +253,9 @@ namespace KafkaNet
 
             public int CorrelationId { get; private set; }
             public TaskCompletionSource<byte[]> ReceiveTask { get; private set; }
-            public DateTime CreatedOnUtc { get; private set; }
+            public DateTime CreatedOnUtc { get; set; }
         }
+        #endregion
     }
 
 

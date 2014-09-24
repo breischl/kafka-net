@@ -66,6 +66,7 @@
     <Compile Include="Model\KafkaErrorCode.cs" />
     <Compile Include="Model\ProduceResult.cs" />
     <Compile Include="Model\ProducerOptions.cs" />
+    <Compile Include="Model\KafkaEndpoint.cs" />
     <Compile Include="Protocol\Broker.cs" />
     <Compile Include="Common\ReadByteStream.cs" />
     <Compile Include="Common\Crc32.cs" />

@@ -33,6 +33,13 @@ namespace kafka_tests.Unit
 			_router = _routerProxy.Create();
 		}
 
+		[TearDown]
+		public void Teardown()
+		{
+			_router.Dispose();
+			_kernel.Dispose();
+		}
+
 		[Test]
 		public async Task ProducerShouldGroupMessagesByBroker()
 		{
@@ -81,21 +88,21 @@ namespace kafka_tests.Unit
 		[Test]
 		public async Task ShouldSendAsyncToAllConnectionsEvenWhenExceptionOccursOnOne()
 		{
-			var routerProxy = new BrokerRouterProxy(_kernel);
-			routerProxy.BrokerConn1.ProduceResponseFunction = () => { throw new ApplicationException("some exception"); };
+			_routerProxy.BrokerConn1.ProduceResponseFunction = () => { throw new ApplicationException("some exception"); };
 
 			var producer = new Producer(_router);
 			var messages = new List<Message>
-                {
-                    new Message{Value = BitConverter.GetBytes(1)}, new Message{Value = BitConverter.GetBytes(2)}
-                };
+            {
+                new Message{Value = BitConverter.GetBytes(1)}, 
+				new Message{Value = BitConverter.GetBytes(2)}
+            };
 
 			var produceResult = await producer.SendMessageAsync("UnitTest", messages);
 			Assert.That(produceResult.FailedMessages.Count, Is.EqualTo(1));
 			Assert.That(produceResult.SuccessfulMessages.Count, Is.EqualTo(1));
 
-			Assert.That(routerProxy.BrokerConn0.ProduceRequestCallCount, Is.EqualTo(1));
-			Assert.That(routerProxy.BrokerConn1.ProduceRequestCallCount, Is.EqualTo(1));
+			Assert.That(_routerProxy.BrokerConn0.ProduceRequestCallCount, Is.EqualTo(1));
+			Assert.That(_routerProxy.BrokerConn1.ProduceRequestCallCount, Is.EqualTo(1));
 		}
 
 		[Test]

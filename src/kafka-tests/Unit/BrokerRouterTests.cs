@@ -7,6 +7,8 @@ using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using KafkaNet.Common;
+using KafkaNet.Model;
+using System.Net;
 
 namespace kafka_tests.Unit
 {
@@ -30,12 +32,20 @@ namespace kafka_tests.Unit
             _connMock1 = _kernel.GetMock<IKafkaConnection>();
             _factoryMock = _kernel.GetMock<IKafkaConnectionFactory>();
             _factoryMock.Setup(x => x.Create(It.Is<Uri>(uri => uri.Port == 1), It.IsAny<int>())).Returns(() => _connMock1.Object);
+			_factoryMock.Setup(x => x.Create(It.Is<KafkaEndpoint>(ep => ep.ServerUri.Port == 1), It.IsAny<int>())).Returns(() => _connMock1.Object);
+			_factoryMock.Setup(x => x.Resolve(It.IsAny<Uri>())).Returns<Uri>((uri) => new KafkaEndpoint(uri, new IPEndPoint(IPAddress.Loopback, uri.Port)));
         }
+
+		[TearDown]
+		public void Teardown()
+		{
+			_kernel.Dispose();
+		}
 
         [Test]
         public void BrokerRouterCanConstruct()
         {
-            var result = new BrokerRouter(new KafkaNet.Model.KafkaOptions
+            var result = new BrokerRouter(new KafkaOptions
             {
                 KafkaServerUri = new List<Uri> { new Uri("http://localhost:1") },
                 KafkaConnectionFactory = _factoryMock.Object
@@ -47,17 +57,17 @@ namespace kafka_tests.Unit
         [Test]
         public void BrokerRouterUsesFactoryToAddNewBrokers()
         {
-            var router = new BrokerRouter(new KafkaNet.Model.KafkaOptions
+            var router = new BrokerRouter(new KafkaOptions
             {
                 KafkaServerUri = new List<Uri> { new Uri("http://localhost:1") },
                 KafkaConnectionFactory = _factoryMock.Object
             });
 
             _connMock1.Setup(x => x.SendAsync(It.IsAny<IKafkaRequest<MetadataResponse>>()))
-                      .Returns(() => Task.Factory.StartNew(() => new List<MetadataResponse> { CreateMetaResponse() }));
+                      .Returns(() => Task.Run(() => new List<MetadataResponse> { CreateMetaResponse() }));
 
             var topics = router.GetTopicMetadata(TestTopic);
-            _factoryMock.Verify(x => x.Create(It.Is<Uri>(uri => uri.Port == 2), It.IsAny<int>()), Times.Once());
+			_factoryMock.Verify(x => x.Create(It.Is<KafkaEndpoint>(ep => ep.ServerUri.Port == 1), It.IsAny<int>()), Times.Once());
         }
 
         #region MetadataRequest Tests...
@@ -65,7 +75,9 @@ namespace kafka_tests.Unit
         public void BrokerRouteShouldCycleThroughEachBrokerUntilOneIsFound()
         {
             var routerProxy = new BrokerRouterProxy(_kernel);
-            routerProxy.BrokerConn0.MetadataResponseFunction = () => { throw new Exception("some error"); };
+			var succeed = false;
+			routerProxy.BrokerConn0.MetadataResponseFunction = () => { if (succeed) { return CreateMetaResponse(); } else { succeed = true; throw new Exception("some error"); } };
+			routerProxy.BrokerConn1.MetadataResponseFunction = () => { if (succeed) { return CreateMetaResponse(); } else { succeed = true; throw new Exception("some error"); } };
             var router = routerProxy.Create();
 
             var result = router.GetTopicMetadata(TestTopic);
@@ -104,7 +116,7 @@ namespace kafka_tests.Unit
             var result1 = router.GetTopicMetadata(TestTopic);
             var result2 = router.GetTopicMetadata(TestTopic);
 
-            Assert.That(routerProxy.BrokerConn0.MetadataRequestCallCount, Is.EqualTo(1));
+			Assert.That(routerProxy.BrokerConn0.MetadataRequestCallCount + routerProxy.BrokerConn1.MetadataRequestCallCount, Is.EqualTo(1));
             Assert.That(result1.Count, Is.EqualTo(1));
             Assert.That(result1[0].Name, Is.EqualTo(TestTopic));
             Assert.That(result2.Count, Is.EqualTo(1));
@@ -118,10 +130,12 @@ namespace kafka_tests.Unit
             var router = routerProxy.Create();
 
             router.RefreshTopicMetadata(TestTopic);
-            Assert.That(routerProxy.BrokerConn0.MetadataRequestCallCount, Is.EqualTo(1));
+			var metaCalls = routerProxy.BrokerConn0.MetadataRequestCallCount + routerProxy.BrokerConn1.MetadataRequestCallCount;
+			Assert.That(metaCalls, Is.EqualTo(1));
 
-            router.RefreshTopicMetadata(TestTopic);
-            Assert.That(routerProxy.BrokerConn0.MetadataRequestCallCount, Is.EqualTo(2));
+			router.RefreshTopicMetadata(TestTopic);
+			metaCalls = routerProxy.BrokerConn0.MetadataRequestCallCount + routerProxy.BrokerConn1.MetadataRequestCallCount;
+            Assert.That(metaCalls, Is.EqualTo(2));
         }
         #endregion
 
@@ -139,17 +153,18 @@ namespace kafka_tests.Unit
             Assert.That(p1.PartitionId, Is.EqualTo(1));
         }
 
-        [Test]
-        [ExpectedException(typeof(InvalidPartitionException))]
-        public void SelectExactPartitionShouldThrowWhenPartitionDoesNotExist()
-        {
-            var routerProxy = new BrokerRouterProxy(_kernel);
+		[Test]
+		public void SelectExactPartitionShouldThrowWhenPartitionDoesNotExist()
+		{
+			var routerProxy = new BrokerRouterProxy(_kernel);
 
-            routerProxy.Create().SelectBrokerRoute(TestTopic, 3);
-        }
+			Assert.Throws<InvalidPartitionException>(() =>
+			{
+				routerProxy.Create().SelectBrokerRoute(TestTopic, 3);
+			});
+		}
 
         [Test]
-        [ExpectedException(typeof(InvalidTopicMetadataException))]
         public void SelectExactPartitionShouldThrowWhenTopicsCollectionIsEmpty()
         {
             var metadataResponse = CreateMetaResponse();
@@ -157,12 +172,15 @@ namespace kafka_tests.Unit
 
             var routerProxy = new BrokerRouterProxy(_kernel);
             routerProxy.BrokerConn0.MetadataResponseFunction = () => metadataResponse;
+			routerProxy.BrokerConn1.MetadataResponseFunction = () => metadataResponse;
 
-            routerProxy.Create().SelectBrokerRoute(TestTopic, 1);
+			Assert.Throws<InvalidTopicMetadataException>(() =>
+			{
+				routerProxy.Create().SelectBrokerRoute(TestTopic, 1);
+			});
         }
 
         [Test]
-        [ExpectedException(typeof(LeaderNotFoundException))]
         public void SelectExactPartitionShouldThrowWhenBrokerCollectionIsEmpty()
         {
             var metadataResponse = CreateMetaResponse();
@@ -170,9 +188,12 @@ namespace kafka_tests.Unit
 
             var routerProxy = new BrokerRouterProxy(_kernel);
             routerProxy.BrokerConn0.MetadataResponseFunction = () => metadataResponse;
+			routerProxy.BrokerConn1.MetadataResponseFunction = () => metadataResponse;
 
-
-            routerProxy.Create().SelectBrokerRoute(TestTopic, 1);
+			Assert.Throws<LeaderNotFoundException>(() =>
+			{
+				routerProxy.Create().SelectBrokerRoute(TestTopic, 1);
+			});
         }
         #endregion
 
@@ -205,21 +226,22 @@ namespace kafka_tests.Unit
         }
 
         [Test]
-        [ExpectedException(typeof(InvalidTopicMetadataException))]
         public void SelectPartitionShouldThrowWhenTopicsCollectionIsEmpty()
         {
             var metadataResponse = CreateMetaResponse();
             metadataResponse.Topics.Clear();
 
-
             var routerProxy = new BrokerRouterProxy(_kernel);
             routerProxy.BrokerConn0.MetadataResponseFunction = () => metadataResponse;
+			routerProxy.BrokerConn1.MetadataResponseFunction = () => metadataResponse;
 
-            routerProxy.Create().SelectBrokerRoute(TestTopic);
+			Assert.Throws<InvalidTopicMetadataException>(() =>
+			{
+				routerProxy.Create().SelectBrokerRoute(TestTopic);
+			});
         }
 
         [Test]
-        [ExpectedException(typeof(LeaderNotFoundException))]
         public void SelectPartitionShouldThrowWhenBrokerCollectionIsEmpty()
         {
             var metadataResponse = CreateMetaResponse();
@@ -227,8 +249,12 @@ namespace kafka_tests.Unit
 
             var routerProxy = new BrokerRouterProxy(_kernel);
             routerProxy.BrokerConn0.MetadataResponseFunction = () => metadataResponse;
+			routerProxy.BrokerConn1.MetadataResponseFunction = () => metadataResponse;
 
-            routerProxy.Create().SelectBrokerRoute(TestTopic);
+			Assert.Throws<LeaderNotFoundException>(() =>
+			{
+				routerProxy.Create().SelectBrokerRoute(TestTopic);
+			});
         }
         #endregion
 

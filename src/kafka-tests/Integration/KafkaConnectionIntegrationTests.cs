@@ -18,14 +18,13 @@ namespace kafka_tests.Integration
 	[Timeout(10000)]
     public class KafkaConnectionIntegrationTests
     {
-        private KafkaConnection _conn;
+        private IKafkaConnection _conn;
 
         [SetUp]
         public void Setup()
         {
             var options = new KafkaOptions(IntegrationConfig.IntegrationUri);
-            
-            _conn = new KafkaConnection(new KafkaTcpSocket(options.KafkaServerUri.First()), options.ResponseTimeoutMs);
+			_conn = (new DefaultKafkaConnectionFactory()).Create(IntegrationConfig.IntegrationUri, options.ResponseTimeoutMs);
         }
 
 		[TearDown]
@@ -73,20 +72,22 @@ namespace kafka_tests.Integration
         }
 
         [Test]
-        public void EnsureDifferentTypesOfResponsesCanBeReadAsync()
+        public async Task EnsureDifferentTypesOfResponsesCanBeReadAsync()
         {
             //just ensure the topic exists for this test
-            var ensureTopic = _conn.SendAsync(new MetadataRequest { Topics = new List<string>(new[] { IntegrationConfig.IntegrationTopic }) }).Result;
+            var ensureTopic = await _conn.SendAsync(new MetadataRequest { Topics = new List<string>(new[] { IntegrationConfig.IntegrationTopic }) });
 
             Assert.That(ensureTopic.Count, Is.GreaterThan(0));
             Assert.That(ensureTopic.First().Topics.Count, Is.EqualTo(1));
-            Assert.That(ensureTopic.First().Topics.First().Name == IntegrationConfig.IntegrationTopic, Is.True, "ProduceRequest did not return expected topic.");
+            Assert.That(ensureTopic.First().Topics.First().Name == IntegrationConfig.IntegrationTopic, Is.True, "MetadataRequest did not return expected topic.");
 
 
             var result1 = _conn.SendAsync(RequestFactory.CreateProduceRequest(IntegrationConfig.IntegrationTopic, "test"));
             var result2 = _conn.SendAsync(new MetadataRequest());
             var result3 = _conn.SendAsync(RequestFactory.CreateOffsetRequest(IntegrationConfig.IntegrationTopic));
             var result4 = _conn.SendAsync(RequestFactory.CreateFetchRequest(IntegrationConfig.IntegrationTopic, 0));
+
+			await Task.WhenAll(result1, result2, result3, result4);
 
             Assert.That(result1.Result.Count, Is.EqualTo(1));
             Assert.That(result1.Result.First().Topic == IntegrationConfig.IntegrationTopic, Is.True, "ProduceRequest did not return expected topic.");

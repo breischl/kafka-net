@@ -9,6 +9,8 @@ using KafkaNet.Protocol;
 using NUnit.Framework;
 using kafka_tests.Helpers;
 using System.Collections.Generic;
+using KafkaNet.Model;
+using System.Net;
 
 namespace kafka_tests.Integration
 {
@@ -21,18 +23,18 @@ namespace kafka_tests.Integration
     public class KafkaTcpSocketTests
     {
         private readonly Uri _fakeServerUrl;
-        private readonly Uri _badServerUrl;
+        private readonly KafkaEndpoint _fakeEndpoint;
 
         public KafkaTcpSocketTests()
         {
             _fakeServerUrl = new Uri("http://localhost:8999");
-            _badServerUrl = new Uri("http://localhost:1");
-        }
+        	_fakeEndpoint = new KafkaEndpoint(_fakeServerUrl, new IPEndPoint(IPAddress.Loopback, _fakeServerUrl.Port));
+		}
 
         [Test]
         public void KafkaTcpSocketShouldConstruct()
         {
-            using (var test = new KafkaTcpSocket(_fakeServerUrl))
+			using (var test = new KafkaTcpSocket(_fakeEndpoint))
             {
                 Assert.That(test, Is.Not.Null);
                 Assert.That(test.ServerUri, Is.EqualTo(_fakeServerUrl));
@@ -44,7 +46,7 @@ namespace kafka_tests.Integration
         public void KafkaTcpSocketShouldDisposeEvenWhilePollingToReconnect()
         {
 			using (var server = new FakeTcpServer(8999))
-			using (var test = new KafkaTcpSocket(_fakeServerUrl))
+			using (var test = new KafkaTcpSocket(_fakeEndpoint))
 			{
 				var taskResult = test.ReadAsync(4);
 				taskResult.Wait(1);
@@ -62,7 +64,7 @@ namespace kafka_tests.Integration
 		public void KafkaTcpSocketShouldDisposeEvenWhileAwaitingReadAndThrowException()
 		{
 			using (var server = new FakeTcpServer(8999))
-			using (var test = new KafkaTcpSocket(_fakeServerUrl))
+			using (var test = new KafkaTcpSocket(_fakeEndpoint))
 			{
 				var taskResult = test.ReadAsync(4);
 				taskResult.Wait(1);
@@ -85,7 +87,7 @@ namespace kafka_tests.Integration
 			{
 				var count = 0;
 
-				using (var test = new KafkaTcpSocket(_fakeServerUrl))
+				using (var test = new KafkaTcpSocket(_fakeEndpoint))
 				{
 
 					var resultTask = test.ReadAsync(4).ContinueWith(t =>
@@ -123,7 +125,7 @@ namespace kafka_tests.Integration
 				const int firstMessage = 99;
 				const string secondMessage = "testmessage";
 
-				using (var test = new KafkaTcpSocket(_fakeServerUrl))
+				using (var test = new KafkaTcpSocket(_fakeEndpoint))
 				{
 					var readTask = test.ReadAsync(4);
 					
@@ -153,7 +155,7 @@ namespace kafka_tests.Integration
                 var payload = new WriteByteStream();
                 payload.Pack(firstMessage.ToBytes(), secondMessage.ToUnsizedBytes());
 
-				using (var test = new KafkaTcpSocket(_fakeServerUrl))
+				using (var test = new KafkaTcpSocket(_fakeEndpoint))
 				{
 					var readTask = test.ReadAsync(4);
 
@@ -173,7 +175,7 @@ namespace kafka_tests.Integration
 		public void ReadShouldThrowServerDisconnectedExceptionWhenDisconnected()
 		{
 			using (var server = new FakeTcpServer(8999))
-			using (var socket = new KafkaTcpSocket(_fakeServerUrl))
+			using (var socket = new KafkaTcpSocket(_fakeEndpoint))
 			{
 				var resultTask = socket.ReadAsync(4);
 
@@ -201,7 +203,7 @@ namespace kafka_tests.Integration
                 server.OnClientConnected += () => Interlocked.Increment(ref connects);
                 server.OnClientDisconnected += () => Interlocked.Increment(ref disconnects);
 
-				using (var socket = new KafkaTcpSocket(_fakeServerUrl))
+				using (var socket = new KafkaTcpSocket(_fakeEndpoint))
 				{
 					//wait till connected
 					TaskTest.WaitFor(() => connects > 0);
@@ -235,7 +237,7 @@ namespace kafka_tests.Integration
         public async Task ReadShouldStackReadRequestsAndReturnOneAtATime()
         {
             using (var server = new FakeTcpServer(8999))
-			using (var socket = new KafkaTcpSocket(_fakeServerUrl))
+			using (var socket = new KafkaTcpSocket(_fakeEndpoint))
 			{
                 var messages = new[]{"test1", "test2", "test3", "test4"};
                 var expectedLength = "test1".Length;
@@ -264,7 +266,7 @@ namespace kafka_tests.Integration
                 const int testData = 99;
                 int result = 0;
 
-				using (var test = new KafkaTcpSocket(_fakeServerUrl))
+				using (var test = new KafkaTcpSocket(_fakeEndpoint))
 				{
 					server.OnBytesReceived += data => result = data.ToInt32();
 
@@ -283,7 +285,7 @@ namespace kafka_tests.Integration
                 const int testData = 99;
                 var results = new List<byte>();
 
-				using (var test = new KafkaTcpSocket(_fakeServerUrl))
+				using (var test = new KafkaTcpSocket(_fakeEndpoint))
 				{
 					server.OnBytesReceived += results.AddRange;
 

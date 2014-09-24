@@ -12,7 +12,7 @@ namespace KafkaNet.Model
         /// List of Uri connections to kafka servers.  The are used to query for metadata from Kafka.  More than one is recommended.
         /// </summary>
         public List<Uri> KafkaServerUri { get; set; }
-        
+                
 		/// <summary>
         /// Provides a factory for creating new kafka connections.
         /// </summary>
@@ -27,12 +27,12 @@ namespace KafkaNet.Model
         /// Timeout length in milliseconds waiting for a response from kafka.
         /// </summary>
         public int ResponseTimeoutMs { get; set; }
-        
+
         public KafkaOptions(params Uri[] kafkaServerUri)
         {
             KafkaServerUri = kafkaServerUri.ToList();
-            KafkaConnectionFactory = new DefaultKafkaConnectionFactory();
             PartitionSelector = new DefaultPartitionSelector();
+            KafkaConnectionFactory = new DefaultKafkaConnectionFactory();
             ResponseTimeoutMs = DefaultResponseTimeout;
         }
     }

@@ -10,6 +10,7 @@ using Moq;
 using Ninject.MockingKernel.Moq;
 using kafka_tests.Fakes;
 using System.Threading;
+using System.Net;
 
 namespace kafka_tests
 {
@@ -41,22 +42,27 @@ namespace kafka_tests
 			_fakeConn0.ProduceResponseFunction = () => new ProduceResponse { Offset = _offset0++, PartitionId = 0, Topic = TestTopic };
 			_fakeConn0.MetadataResponseFunction = () => MetadataResponse();
 			_fakeConn0.OffsetResponseFunction = () => new OffsetResponse { Offsets = new List<long> { 0, 99 }, PartitionId = 0, Topic = TestTopic };
-			_fakeConn0.FetchResponseFunction = () => { Thread.Sleep(500); return null; };
+			_fakeConn0.FetchResponseFunction = () => { Thread.Sleep(50); return null; };
 
 			_fakeConn1 = new FakeKafkaConnection(new Uri("http://localhost:2"));
 			_fakeConn1.ProduceResponseFunction = () => new ProduceResponse { Offset = _offset1++, PartitionId = 1, Topic = TestTopic };
 			_fakeConn1.MetadataResponseFunction = () => MetadataResponse();
 			_fakeConn1.OffsetResponseFunction = () => new OffsetResponse { Offsets = new List<long> { 0, 100 }, PartitionId = 1, Topic = TestTopic };
-			_fakeConn1.FetchResponseFunction = () => { Thread.Sleep(500); return null; };
+			_fakeConn1.FetchResponseFunction = () => { Thread.Sleep(50); return null; };
 
 			_factoryMock = _kernel.GetMock<IKafkaConnectionFactory>();
 			_factoryMock.Setup(x => x.Create(It.Is<Uri>(uri => uri.Port == 1), It.IsAny<int>())).Returns(() => _fakeConn0);
+			_factoryMock.Setup(x => x.Create(It.Is<KafkaEndpoint>(ep => ep.ServerUri.Port == 1), It.IsAny<int>())).Returns(() => _fakeConn0);
+			
 			_factoryMock.Setup(x => x.Create(It.Is<Uri>(uri => uri.Port == 2), It.IsAny<int>())).Returns(() => _fakeConn1);
+			_factoryMock.Setup(x => x.Create(It.Is<KafkaEndpoint>(ep => ep.Endpoint.Port == 2), It.IsAny<int>())).Returns(() => _fakeConn1);
+			
+			_factoryMock.Setup(x => x.Resolve(It.IsAny<Uri>())).Returns<Uri>((uri) => new KafkaEndpoint(uri, new IPEndPoint(IPAddress.Loopback, uri.Port)));
 		}
 
 		public IBrokerRouter Create()
 		{
-			return new BrokerRouter(new KafkaNet.Model.KafkaOptions
+			return new BrokerRouter(new KafkaOptions
 			{
 				KafkaServerUri = new List<Uri> { new Uri("http://localhost:1"), new Uri("http://localhost:2") },
 				KafkaConnectionFactory = _factoryMock.Object,
